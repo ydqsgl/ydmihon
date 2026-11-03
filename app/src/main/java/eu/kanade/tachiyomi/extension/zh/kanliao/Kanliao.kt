@@ -13,10 +13,9 @@ import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import uy.kohesive.injekt.Injekt
@@ -32,14 +31,12 @@ class Kanliao : HttpSource() {
     override val supportsLatest = true
 
     /**
-     * The domain discovery page that lists all current working domains.
-     * Encoded as punycode: 回家.今日看料.com
+     * The domain discovery page (punycode: 回家.今日看料.com) that lists all current working domains.
      */
     private val domainDiscoveryUrl = "https://xn--zbsq6i.xn--wmqx96crga604d.com/"
 
     /**
-     * Known fallback domains, tried in order if the primary domain fails.
-     * Updated from the domain discovery page.
+     * Known domains, tried in order. These are updated from the discovery page when needed.
      */
     private val knownDomains = listOf(
         "https://kanliao30.com",
@@ -50,13 +47,14 @@ class Kanliao : HttpSource() {
         "https://kanliao17.buzz",
     )
 
-    /**
-     * Current working base URL. Initialized to the first known domain and
-     * automatically updated when a domain fails.
-     */    @Volatile
+    @Volatile
     private var currentBaseUrl: String = knownDomains.first()
 
     override val baseUrl: String get() = currentBaseUrl
+
+    private val domainLock = Mutex()
+    @Volatile
+    private var domainVerified: Boolean = false
 
     // Override client to avoid injectLazy() issues with direct constructor instantiation
     override val client get() = Injekt.get<NetworkHelper>().client
@@ -69,71 +67,99 @@ class Kanliao : HttpSource() {
     }
 
     /**
-     * Execute a request, and if it returns 404 or fails, try refreshing the domain.
-     * This makes the source resilient to domain changes.
-     */    private suspend fun fetchWithDomainRecovery(urlBuilder: () -> String): Response {
-        var url = urlBuilder()
-        var response = client.newCall(GET(url, headers)).execute()
-
-        if (response.code == 404 || response.code == 502 || response.code == 503) {
-            response.close()
-            // Try to find a working domain
-            val newDomain = findWorkingDomain()
+     * Verify that the current domain is working. Called before every request.
+     * If the current domain fails the ping check, tries all known domains
+     * and falls back to the discovery page to find new ones.
+     */
+    private suspend fun ensureDomainWorks() {
+        if (domainVerified) return
+        domainLock.withLock {
+            if (domainVerified) return
+            // Ping the current domain
+            if (pingDomain(currentBaseUrl)) {
+                domainVerified = true
+                return
+            }
+            // Current domain is down - try all known domains
+            for (domain in knownDomains) {
+                if (pingDomain(domain)) {
+                    currentBaseUrl = domain
+                    domainVerified = true
+                    return
+                }
+            }
+            // All known domains failed - fetch from discovery page
+            val newDomain = discoverNewDomain()
             if (newDomain != null) {
                 currentBaseUrl = newDomain
-                url = urlBuilder()
-                response = client.newCall(GET(url, headers)).execute()
+                domainVerified = true
             }
         }
-
-        if (!response.isSuccessful) {
-            response.close()
-            throw eu.kanade.tachiyomi.network.HttpException(response.code)
-        }
-
-        return response
     }
 
     /**
-     * Check which domain is currently working by hitting their /ping endpoint.
-     * Returns the first working domain URL, or null if none work.
-     */    private suspend fun findWorkingDomain(): String? {
-        for (domain in knownDomains) {
-            try {
-                val pingResponse = client.newCall(GET("$domain/ping", headers)).execute()
-                val body = pingResponse.body?.string()
-                pingResponse.close()
-                if (body?.trim() == "pong") {
-                    return domain
-                }
-            } catch (_: Exception) {
-                // Try next domain
-            }
+     * Ping a domain to check if it's alive. Returns true if the domain responds with "pong".
+     */
+    private suspend fun pingDomain(domain: String): Boolean {
+        return try {
+            val response = client.newCall(GET("$domain/ping", headers)).awaitSuccess()
+            val body = response.body?.string()
+            response.close()
+            body?.trim() == "pong"
+        } catch (_: Exception) {
+            false
         }
-        // Last resort: try to fetch new domains from the discovery page
-        try {
-            val response = client.newCall(GET(domainDiscoveryUrl, headers)).execute()
+    }
+
+    /**
+     * Fetch the discovery page and extract new domains from its JavaScript.
+     */
+    private suspend fun discoverNewDomain(): String? {
+        return try {
+            val response = client.newCall(GET(domainDiscoveryUrl, headers)).awaitSuccess()
             val html = response.body?.string() ?: ""
             response.close()
-            // Extract domains from the JavaScript array in the page
+            // Extract domains from JavaScript array: "https://kanliaoXX.xxx"
             val domainRegex = Regex("""https://[a-z0-9]+\.[a-z]+""")
             val domains = domainRegex.findAll(html).map { it.value }.distinct().toList()
             for (domain in domains) {
-                try {
-                    val pingResponse = client.newCall(GET("$domain/ping", headers)).execute()
-                    val body = pingResponse.body?.string()
-                    pingResponse.close()
-                    if (body?.trim() == "pong") {
-                        return domain
-                    }
-                } catch (_: Exception) {
-                    // Try next
+                if (pingDomain(domain)) {
+                    return domain
                 }
             }
+            null
         } catch (_: Exception) {
-            // Discovery page also failed
+            null
         }
-        return null
+    }
+
+    /**
+     * Fetch a URL with automatic domain recovery.
+     * First ensures the domain works, then makes the request.
+     * If the request still fails with 404/502/503, tries switching domains and retries.
+     */
+    private suspend fun fetchWithDomainRecovery(urlBuilder: () -> String): okhttp3.Response {
+        ensureDomainWorks()
+
+        var url = urlBuilder()
+        var response = client.newCall(GET(url, headers)).awaitSuccess()
+
+        if (response.code == 404 || response.code == 502 || response.code == 503) {
+            response.close()
+            // Domain might have just gone down - reset verification and try again
+            domainVerified = false
+            ensureDomainWorks()
+            url = urlBuilder()
+            response = client.newCall(GET(url, headers)).awaitSuccess()
+        }
+
+        if (!response.isSuccessful) {
+            val code = response.code
+            response.close()
+            throw eu.kanade.tachiyomi.network.HttpException(code)
+        }
+
+        return response
     }
 
     override suspend fun getPopularManga(page: Int): MangasPage {
@@ -321,15 +347,7 @@ class Kanliao : HttpSource() {
                     // Ensure video URL has a proper scheme
                     val videoUrl = fixUrl(rawVideoUrl)
                     if (videoUrl.isNotBlank()) {
-                        // Create a page with video URL for the VideoViewer
-                        val picMatch = Regex(""""pic"\s*:\s*\\?"([^\\"]+)\\?"*""").find(configJson)
-                        var rawPosterUrl = picMatch?.groupValues?.get(1)
-                            ?.replace("\\/", "/")
-                            ?.replace("\\u002F", "/")
-                            ?: ""
-                        // Ensure poster URL also has a proper scheme
                         // Use video URL as imageUrl so it survives cache serialization
-                        // (videoUrl is @Transient and gets lost during JSON serialize/deserialize)
                         val page = Page(0, imageUrl = videoUrl)
                         page.videoUrl = videoUrl
                         pages.add(page)
@@ -402,13 +420,9 @@ class Kanliao : HttpSource() {
      */
     private fun fixUrl(url: String): String {
         if (url.isBlank()) return ""
-        // Already has a valid scheme
         if (url.startsWith("http://") || url.startsWith("https://")) return url
-        // Protocol-relative URL (e.g. //cdn.example.com/video.m3u8)
         if (url.startsWith("//")) return "https:$url"
-        // Relative path - prepend base URL
         if (url.startsWith("/")) return "$baseUrl$url"
-        // Fallback: treat as relative to base
         return "$baseUrl/$url"
     }
 
