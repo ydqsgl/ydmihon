@@ -709,10 +709,16 @@ class ReaderActivity : BaseActivity() {
         // Check if pages contain video content and switch to VideoViewer if needed
         val hasVideoContent = viewerChapters.currChapter.pages?.any { it.videoUrl != null } == true
         if (hasVideoContent && viewer !is eu.kanade.tachiyomi.ui.reader.viewer.VideoViewer) {
+            // Create the VideoViewer via updateViewer, then immediately pass chapters to it
             updateViewer()
+            // updateViewer sets isLoadingViewer=true and creates a new viewer
+            // We need to pass the chapters to the new viewer and clear the loading state
+            isLoadingViewer = false
+            viewer?.setChapters(viewerChapters)
             return
         }
 
+        // Also handle the case where viewer is already VideoViewer but hasn't received chapters yet
         viewer?.setChapters(viewerChapters)
 
         lifecycleScope.launch(Dispatchers.IO) {
