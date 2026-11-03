@@ -75,7 +75,17 @@ class AppUpdateChecker(
 
         // Simple version comparison
         if (isVersionNewer(latestVersion, currentVersion)) {
-            val downloadUrl = "https://github.com/$GITHUB_REPO/releases/download/${releaseInfo.tag_name}/app-universal-debug.apk"
+            // Pick the APK that actually exists in the release instead of assuming a fixed name.
+            val apkAsset = releaseInfo.assets.firstOrNull {
+                it.name.endsWith(".apk", ignoreCase = true) && it.name.contains("arm64-v8a")
+            } ?: releaseInfo.assets.firstOrNull {
+                it.name.endsWith(".apk", ignoreCase = true) && it.name.contains("universal")
+            } ?: releaseInfo.assets.firstOrNull {
+                it.name.endsWith(".apk", ignoreCase = true)
+            }
+
+            val downloadUrl = apkAsset?.browserDownloadUrl
+                ?: "https://github.com/$GITHUB_REPO/releases/download/${releaseInfo.tag_name}/app-arm64-v8a-release.apk"
             return GetApplicationRelease.Result.NewUpdate(
                 Release(
                     version = latestVersion,
@@ -107,6 +117,14 @@ class AppUpdateChecker(
 private data class GithubLatestRelease(
     val tag_name: String,
     val body: String? = null,
+    val assets: List<GithubAsset> = emptyList(),
+)
+
+@Serializable
+private data class GithubAsset(
+    val name: String,
+    @kotlinx.serialization.SerialName("browser_download_url")
+    val browserDownloadUrl: String,
 )
 
 val RELEASE_TAG: String by lazy {

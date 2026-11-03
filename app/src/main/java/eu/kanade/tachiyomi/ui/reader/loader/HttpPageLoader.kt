@@ -285,30 +285,22 @@ internal class HttpPageLoader(
     }
 
     /**
-     * Check if a URL appears to be a video URL.
-     * Detects common video formats and streaming protocols.
+     * Check if a URL points at a video file.
+     *
+     * Only the path/extension is inspected. Substring checks on the whole URL (the previous
+     * approach used "cdn", "media", "play", "stream") misclassified ordinary images hosted on a
+     * CDN as video, which then got handed to the video player and surfaced as "source error".
      */
     private fun isVideoUrl(url: String): Boolean {
-        val lower = url.lowercase()
-        return lower.endsWith(".m3u8") ||
-            lower.endsWith(".mp4") ||
-            lower.endsWith(".webm") ||
-            lower.endsWith(".mkv") ||
-            lower.endsWith(".avi") ||
-            lower.endsWith(".mov") ||
-            lower.contains("/video") ||
-            lower.contains(".m3u8?") ||
-            lower.contains(".mp4?") ||
-            lower.contains("hls") ||
-            lower.contains("stream") ||
-            lower.contains("cdn") ||
-            lower.contains("media") ||
-            lower.contains("play") ||
-            // Catch-all: if URL has query params typical of video CDNs
-            (lower.contains("token=") || lower.contains("sign=") || lower.contains("expires="))
+        val path = url.substringBefore('#').substringBefore('?').lowercase()
+        return VIDEO_EXTENSIONS.any { path.endsWith(it) }
     }
 
     companion object {
         private const val LIMITED_PAGES_AHEAD = 4
+
+        private val VIDEO_EXTENSIONS = listOf(
+            ".m3u8", ".mp4", ".webm", ".mkv", ".avi", ".mov", ".m4v", ".flv", ".3gp",
+        )
     }
 }
