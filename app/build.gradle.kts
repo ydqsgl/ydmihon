@@ -37,8 +37,8 @@ android {
     defaultConfig {
         applicationId = "app.mihon"
 
-        versionCode = 6
-        versionName = "1.0.5"
+versionCode = 7
+versionName = "1.0.6"
 
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "${Config.includeTelemetry}")
         buildConfigField("boolean", "UPDATER_ENABLED", "true")

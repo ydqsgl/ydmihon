@@ -223,12 +223,13 @@ internal class HttpPageLoader(
         try {
             // Skip image loading for video pages - they are handled by VideoViewer
             // Check both videoUrl (fresh) and imageUrl (may be video URL after cache deserialization)
+            val imageUrlRaw = page.imageUrl
             val isVideoPage = page.videoUrl != null ||
-                (page.imageUrl?.let { it.endsWith(".m3u8") || it.endsWith(".mp4") || it.contains("/video") } == true)
+                (imageUrlRaw != null && isVideoUrl(imageUrlRaw))
             if (isVideoPage) {
                 // Restore videoUrl from imageUrl if it was lost during cache serialization
-                if (page.videoUrl == null && page.imageUrl != null) {
-                    page.videoUrl = page.imageUrl
+                if (page.videoUrl == null && imageUrlRaw != null) {
+                    page.videoUrl = imageUrlRaw
                 }
                 page.status = Page.State.Ready
                 return
@@ -238,6 +239,14 @@ internal class HttpPageLoader(
                 page.imageUrl = source.getImageUrl(page)
             }
             val imageUrl = page.imageUrl!!
+
+            // Validate URL has a proper scheme before attempting to download
+            // This prevents IllegalArgumentException from toHttpUrl() in GET()
+            if (!imageUrl.startsWith("http://", ignoreCase = true) &&
+                !imageUrl.startsWith("https://", ignoreCase = true)
+            ) {
+                throw IllegalArgumentException("Invalid image URL scheme: $imageUrl")
+            }
 
             val file = chapterCache.getImageFile(imageUrl).takeUnless { force } ?: run {
                 val live = page.downloadStream
@@ -274,6 +283,32 @@ internal class HttpPageLoader(
             page.status = Page.State.Error(e)
         }
     }
-}
 
-private const val LIMITED_PAGES_AHEAD = 4
+    /**
+     * Check if a URL appears to be a video URL.
+     * Detects common video formats and streaming protocols.
+     */
+    private fun isVideoUrl(url: String): Boolean {
+        val lower = url.lowercase()
+        return lower.endsWith(".m3u8") ||
+            lower.endsWith(".mp4") ||
+            lower.endsWith(".webm") ||
+            lower.endsWith(".mkv") ||
+            lower.endsWith(".avi") ||
+            lower.endsWith(".mov") ||
+            lower.contains("/video") ||
+            lower.contains(".m3u8?") ||
+            lower.contains(".mp4?") ||
+            lower.contains("hls") ||
+            lower.contains("stream") ||
+            lower.contains("cdn") ||
+            lower.contains("media") ||
+            lower.contains("play") ||
+            // Catch-all: if URL has query params typical of video CDNs
+            (lower.contains("token=") || lower.contains("sign=") || lower.contains("expires="))
+    }
+
+    companion object {
+        private const val LIMITED_PAGES_AHEAD = 4
+    }
+}
