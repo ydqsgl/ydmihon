@@ -56,31 +56,23 @@ class Kanliao : HttpSource() {
     @Volatile
     private var domainVerified: Boolean = false
 
-    // Override client to avoid injectLazy() issues with direct constructor instantiation
     override val client get() = Injekt.get<NetworkHelper>().client
 
-    // Do NOT call super.headersBuilder() because it uses `network.defaultUserAgentProvider()`
-    // which relies on injectLazy() and fails when Kanliao is directly instantiated (not via DI).
     override fun headersBuilder(): okhttp3.Headers.Builder = okhttp3.Headers.Builder().apply {
         add("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
         add("Referer", baseUrl)
     }
 
-    /**
-     * Verify that the current domain is working. Called before every request.
-     * If the current domain fails the ping check, tries all known domains
-     * and falls back to the discovery page to find new ones.
-     */
+    // ============================== Domain Management ==============================
+
     private suspend fun ensureDomainWorks() {
         if (domainVerified) return
         domainLock.withLock {
             if (domainVerified) return
-            // Ping the current domain
             if (pingDomain(currentBaseUrl)) {
                 domainVerified = true
                 return
             }
-            // Current domain is down - try all known domains
             for (domain in knownDomains) {
                 if (pingDomain(domain)) {
                     currentBaseUrl = domain
@@ -88,7 +80,6 @@ class Kanliao : HttpSource() {
                     return
                 }
             }
-            // All known domains failed - fetch from discovery page
             val newDomain = discoverNewDomain()
             if (newDomain != null) {
                 currentBaseUrl = newDomain
@@ -97,9 +88,6 @@ class Kanliao : HttpSource() {
         }
     }
 
-    /**
-     * Ping a domain to check if it's alive. Returns true if the domain responds with "pong".
-     */
     private suspend fun pingDomain(domain: String): Boolean {
         return try {
             val response = client.newCall(GET("$domain/ping", headers)).awaitSuccess()
@@ -111,21 +99,15 @@ class Kanliao : HttpSource() {
         }
     }
 
-    /**
-     * Fetch the discovery page and extract new domains from its JavaScript.
-     */
     private suspend fun discoverNewDomain(): String? {
         return try {
             val response = client.newCall(GET(domainDiscoveryUrl, headers)).awaitSuccess()
             val html = response.body?.string() ?: ""
             response.close()
-            // Extract domains from JavaScript array: "https://kanliaoXX.xxx"
             val domainRegex = Regex("""https://[a-z0-9]+\.[a-z]+""")
             val domains = domainRegex.findAll(html).map { it.value }.distinct().toList()
             for (domain in domains) {
-                if (pingDomain(domain)) {
-                    return domain
-                }
+                if (pingDomain(domain)) return domain
             }
             null
         } catch (_: Exception) {
@@ -133,11 +115,6 @@ class Kanliao : HttpSource() {
         }
     }
 
-    /**
-     * Fetch a URL with automatic domain recovery.
-     * First ensures the domain works, then makes the request.
-     * If the request still fails with 404/502/503, tries switching domains and retries.
-     */
     private suspend fun fetchWithDomainRecovery(urlBuilder: () -> String): okhttp3.Response {
         ensureDomainWorks()
 
@@ -146,7 +123,6 @@ class Kanliao : HttpSource() {
 
         if (response.code == 404 || response.code == 502 || response.code == 503) {
             response.close()
-            // Domain might have just gone down - reset verification and try again
             domainVerified = false
             ensureDomainWorks()
             url = urlBuilder()
@@ -161,6 +137,8 @@ class Kanliao : HttpSource() {
 
         return response
     }
+
+    // ============================== Popular / Latest / Search ==============================
 
     override suspend fun getPopularManga(page: Int): MangasPage {
         val response = fetchWithDomainRecovery { "$baseUrl/" }
@@ -224,8 +202,7 @@ class Kanliao : HttpSource() {
             val style = bgEl.attr("style")
             val match = Regex("""url\(['"]?([^'")]+)['"]?\)""").find(style)
             if (match != null) {
-                val url = match.groupValues[1]
-                return fixUrl(url)
+                return fixUrl(match.groupValues[1])
             }
         }
 
@@ -246,6 +223,8 @@ class Kanliao : HttpSource() {
 
         return null
     }
+
+    // ============================== Manga Details ==============================
 
     override suspend fun getMangaUpdate(
         manga: SManga,
@@ -270,17 +249,17 @@ class Kanliao : HttpSource() {
         val contentEl = document.selectFirst(".post-content")
         val description = StringBuilder()
 
-        val dplayer = contentEl?.selectFirst(".dplayer")
-        var videoUrl: String? = null
-        if (dplayer != null) {
-            val configJson = dplayer.attr("data-config")
-            val videoUrlMatch = Regex(""""url"\s*:\s*\\?"([^\\"]+)\\?"*""").find(configJson)
-            if (videoUrlMatch != null) {
-                videoUrl = videoUrlMatch.groupValues[1]
-                    .replace("\\/", "/")
-                    .replace("\\u002F", "/")
-                description.append("视频链接: $videoUrl\n\n")
-            }
+        // Count videos and images
+        val dplayers = contentEl?.select(".dplayer") ?: emptyList()
+        val imageCount = contentEl?.select("img")?.count {
+            val src = it.absUrl("src")
+            src.isNotEmpty() && !src.contains("gravatar") && !src.contains("avatar") && !isAdDomain(src)
+        } ?: 0
+
+        if (dplayers.isNotEmpty()) {
+            description.append("共 ${dplayers.size} 个视频")
+            if (imageCount > 0) description.append("，$imageCount 张图片")
+            description.append("\n\n")
         }
 
         val paragraphs = contentEl?.select("p")?.map { it.text() }
@@ -294,7 +273,6 @@ class Kanliao : HttpSource() {
                     !it.contains("感谢大家")
             } ?: emptyList()
         if (paragraphs.isNotEmpty()) {
-            if (description.isNotEmpty()) description.append("\n")
             description.append(paragraphs.take(5).joinToString("\n"))
         }
 
@@ -308,67 +286,167 @@ class Kanliao : HttpSource() {
         update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
 
         val ogImage = document.selectFirst("meta[property=og:image]")?.attr("content")
-        thumbnail_url = ogImage ?: manga.thumbnail_url
+        val fixedOg = ogImage?.let { fixUrl(it) } ?: ""
+        thumbnail_url = if (fixedOg.isNotBlank()) fixedOg else manga.thumbnail_url
     }
 
+    // ============================== Chapter List ==============================
+
+    /**
+     * Extract all videos from the article page. Each video becomes a chapter.
+     * If there are no videos but there are images, create a single "图片" chapter.
+     * If there are both videos and images, create video chapters plus an image chapter.
+     */
     private fun parseChapterList(document: Document, manga: SManga): List<SChapter> {
         val dateEl = document.selectFirst("meta[itemprop=datePublished], meta[itemprop=dateModified]")
         val dateStr = dateEl?.attr("content")
         val dateUpload = parseDate(dateStr)
 
-        return listOf(
-            SChapter.create().apply {
-                name = "内容"
-                url = manga.url
-                date_upload = dateUpload
-            },
-        )
-    }
-
-    override fun getMangaUrl(manga: SManga): String = "$baseUrl${manga.url}"
-    override fun getChapterUrl(chapter: SChapter): String = "$baseUrl${chapter.url}"
-
-    override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val response = fetchWithDomainRecovery { getChapterUrl(chapter) }
-        val document = response.asJsoup()
-        val pages = mutableListOf<Page>()
-
+        val chapters = mutableListOf<SChapter>()
         val contentEl = document.selectFirst(".post-content")
-        if (contentEl != null) {
-            // Extract video URL from DPlayer config
-            val dplayer = contentEl.selectFirst(".dplayer")
-            if (dplayer != null) {
-                val configJson = dplayer.attr("data-config")
-                val videoUrlMatch = Regex(""""url"\s*:\s*\\?"([^\\"]+)\\?"*""").find(configJson)
-                if (videoUrlMatch != null) {
-                    var rawVideoUrl = videoUrlMatch.groupValues[1]
-                        .replace("\\/", "/")
-                        .replace("\\u002F", "/")
-                    // Ensure video URL has a proper scheme
-                    val videoUrl = fixUrl(rawVideoUrl)
-                    if (videoUrl.isNotBlank()) {
-                        // Use video URL as imageUrl so it survives cache serialization
-                        val page = Page(0, imageUrl = videoUrl)
-                        page.videoUrl = videoUrl
-                        pages.add(page)
-                    }
+
+        // Extract all dplayer video URLs
+        val dplayers = contentEl?.select(".dplayer") ?: emptyList()
+        dplayers.forEachIndexed { index, dplayer ->
+            val configJson = dplayer.attr("data-config")
+            val videoUrlMatch = Regex(""""url"\s*:\s*\\?"([^\\"]+)\\?"*""").find(configJson)
+            if (videoUrlMatch != null) {
+                val rawVideoUrl = videoUrlMatch.groupValues[1]
+                    .replace("\\/", "/")
+                    .replace("\\u002F", "/")
+                val videoUrl = fixUrl(rawVideoUrl)
+                if (videoUrl.isNotBlank()) {
+                    chapters.add(
+                        SChapter.create().apply {
+                            name = if (dplayers.size > 1) "视频 ${index + 1}" else "视频"
+                            // Encode video URL into chapter url: /archives/xxx#video=N
+                            // We store the video index as a fragment to identify which video to play
+                            url = "${manga.url}#video=${index}"
+                            date_upload = dateUpload
+                        },
+                    )
                 }
             }
+        }
 
-            // Also extract body images as additional pages
-            val imgs = contentEl.select("img")
-            imgs.forEach { img ->
-                var src = img.absUrl("src").ifBlank { img.absUrl("data-src") }
-                src = fixUrl(src)
-                if (src.isNotEmpty() &&
-                    !src.contains("gravatar") &&
-                    !src.contains("avatar") &&
-                    !src.contains("ad") &&
-                    !src.contains("banner") &&
-                    !isAdDomain(src)
-                ) {
-                    pages.add(Page(pages.size, imageUrl = src))
-                }
+        // Extract images as a separate chapter (if any non-ad images exist)
+        val images = contentEl?.select("img") ?: emptyList()
+        val validImages = images.filter { img ->
+            val src = img.absUrl("src").ifBlank { img.absUrl("data-src") }
+            src.isNotEmpty() &&
+                !src.contains("gravatar") &&
+                !src.contains("avatar") &&
+                !src.contains("ad") &&
+                !src.contains("banner") &&
+                !isAdDomain(src)
+        }
+        if (validImages.isNotEmpty()) {
+            chapters.add(
+                SChapter.create().apply {
+                    name = "图片"
+                    url = "${manga.url}#images"
+                    date_upload = dateUpload
+                },
+            )
+        }
+
+        // Fallback: if no videos and no images, create a default chapter
+        if (chapters.isEmpty()) {
+            chapters.add(
+                SChapter.create().apply {
+                    name = "内容"
+                    url = manga.url
+                    date_upload = dateUpload
+                },
+            )
+        }
+
+        return chapters
+    }
+
+    // ============================== Page List ==============================
+
+    override fun getMangaUrl(manga: SManga): String = "$baseUrl${manga.url}"
+    override fun getChapterUrl(chapter: SChapter): String {
+        // Chapter URL may contain a fragment like #video=0 or #images
+        // Strip the fragment for the HTTP request
+        val cleanUrl = chapter.url.substringBefore("#")
+        return "$baseUrl$cleanUrl"
+    }
+
+    override suspend fun getPageList(chapter: SChapter): List<Page> {
+        // Check if this is an image chapter or a video chapter
+        val fragment = chapter.url.substringAfter("#", "")
+
+        if (fragment == "images") {
+            return getImagePages(chapter)
+        }
+
+        if (fragment.startsWith("video=")) {
+            val videoIndex = fragment.substringAfter("video=").toIntOrNull() ?: 0
+            return getVideoPages(chapter, videoIndex)
+        }
+
+        // Default: try video first, then images
+        val response = fetchWithDomainRecovery { getChapterUrl(chapter) }
+        val document = response.asJsoup()
+        return parseAllPages(document)
+    }
+
+    /**
+     * Get pages for a specific video by index.
+     * Fetches the article page, finds the Nth dplayer, returns its video URL.
+     */
+    private suspend fun getVideoPages(chapter: SChapter, videoIndex: Int): List<Page> {
+        val response = fetchWithDomainRecovery { getChapterUrl(chapter) }
+        val document = response.asJsoup()
+        val contentEl = document.selectFirst(".post-content") ?: return emptyList()
+
+        val dplayers = contentEl.select(".dplayer")
+        if (videoIndex >= dplayers.size) return emptyList()
+
+        val dplayer = dplayers[videoIndex]
+        val configJson = dplayer.attr("data-config")
+
+        // Extract video URL
+        val videoUrlMatch = Regex(""""url"\s*:\s*\\?"([^\\"]+)\\?"*""").find(configJson)
+        if (videoUrlMatch != null) {
+            val rawVideoUrl = videoUrlMatch.groupValues[1]
+                .replace("\\/", "/")
+                .replace("\\u002F", "/")
+            val videoUrl = fixUrl(rawVideoUrl)
+            if (videoUrl.isNotBlank()) {
+                val page = Page(0, imageUrl = videoUrl)
+                page.videoUrl = videoUrl
+                return listOf(page)
+            }
+        }
+
+        return emptyList()
+    }
+
+    /**
+     * Get pages for the image chapter.
+     * Fetches the article page, extracts all non-ad images.
+     */
+    private suspend fun getImagePages(chapter: SChapter): List<Page> {
+        val response = fetchWithDomainRecovery { getChapterUrl(chapter) }
+        val document = response.asJsoup()
+        val contentEl = document.selectFirst(".post-content") ?: return emptyList()
+
+        val pages = mutableListOf<Page>()
+        val imgs = contentEl.select("img")
+        imgs.forEach { img ->
+            var src = img.absUrl("src").ifBlank { img.absUrl("data-src") }
+            src = fixUrl(src)
+            if (src.isNotEmpty() &&
+                !src.contains("gravatar") &&
+                !src.contains("avatar") &&
+                !src.contains("ad") &&
+                !src.contains("banner") &&
+                !isAdDomain(src)
+            ) {
+                pages.add(Page(pages.size, imageUrl = src))
             }
         }
 
@@ -383,11 +461,67 @@ class Kanliao : HttpSource() {
         return pages
     }
 
+    /**
+     * Fallback: parse all videos and images from the page into a single page list.
+     */
+    private fun parseAllPages(document: Document): List<Page> {
+        val pages = mutableListOf<Page>()
+        val contentEl = document.selectFirst(".post-content") ?: return emptyList()
+
+        // Extract all dplayer videos
+        val dplayers = contentEl.select(".dplayer")
+        dplayers.forEach { dplayer ->
+            val configJson = dplayer.attr("data-config")
+            val videoUrlMatch = Regex(""""url"\s*:\s*\\?"([^\\"]+)\\?"*""").find(configJson)
+            if (videoUrlMatch != null) {
+                val rawVideoUrl = videoUrlMatch.groupValues[1]
+                    .replace("\\/", "/")
+                    .replace("\\u002F", "/")
+                val videoUrl = fixUrl(rawVideoUrl)
+                if (videoUrl.isNotBlank()) {
+                    val page = Page(pages.size, imageUrl = videoUrl)
+                    page.videoUrl = videoUrl
+                    pages.add(page)
+                }
+            }
+        }
+
+        // Also extract body images
+        val imgs = contentEl.select("img")
+        imgs.forEach { img ->
+            var src = img.absUrl("src").ifBlank { img.absUrl("data-src") }
+            src = fixUrl(src)
+            if (src.isNotEmpty() &&
+                !src.contains("gravatar") &&
+                !src.contains("avatar") &&
+                !src.contains("ad") &&
+                !src.contains("banner") &&
+                !isAdDomain(src)
+            ) {
+                pages.add(Page(pages.size, imageUrl = src))
+            }
+        }
+
+        if (pages.isEmpty()) {
+            var ogImage = document.selectFirst("meta[property=og:image]")?.attr("content") ?: ""
+            ogImage = fixUrl(ogImage)
+            if (ogImage.isNotBlank()) {
+                pages.add(Page(0, imageUrl = ogImage))
+            }
+        }
+
+        return pages
+    }
+
+    // ============================== Filters ==============================
+
     override fun getFilterList(): FilterList = FilterList(
         Filter.Header("注意：文字搜索时分类过滤被忽略"),
         Filter.Separator(),
         CategoryFilter(),
     )
+
+    // ============================== Helpers ==============================
 
     private fun parseDate(dateStr: String?): Long {
         if (dateStr.isNullOrBlank()) return 0L
@@ -416,8 +550,9 @@ class Kanliao : HttpSource() {
 
     /**
      * Fix a URL to ensure it uses the current working domain.
-     * - Replaces any known stale kanliao domain (or subdomain containing "kanliao") with the current baseUrl.
+     * - Replaces any known stale kanliao domain with the current baseUrl.
      * - Handles protocol-relative URLs (//example.com/path) and relative paths.
+     * - CDN URLs (not containing "kanliao") are returned as-is.
      */
     private fun fixUrl(url: String): String {
         if (url.isBlank()) return ""
@@ -440,6 +575,7 @@ class Kanliao : HttpSource() {
                     baseUrl
                 }
             }
+            // CDN URLs (like henxihuan-ma.top) are returned as-is
             return url
         }
 
