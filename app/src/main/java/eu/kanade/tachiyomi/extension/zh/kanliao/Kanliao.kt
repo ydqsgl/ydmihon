@@ -2,7 +2,7 @@ package eu.kanade.tachiyomi.extension.zh.kanliao
 
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
-import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -90,7 +90,7 @@ class Kanliao : HttpSource() {
 
     private suspend fun pingDomain(domain: String): Boolean {
         return try {
-            val response = client.newCall(GET("$domain/ping", headers)).awaitSuccess()
+            val response = client.newCall(GET("$domain/ping", headers)).await()
             val body = response.body?.string()
             response.close()
             body?.trim() == "pong"
@@ -101,7 +101,7 @@ class Kanliao : HttpSource() {
 
     private suspend fun discoverNewDomain(): String? {
         return try {
-            val response = client.newCall(GET(domainDiscoveryUrl, headers)).awaitSuccess()
+            val response = client.newCall(GET(domainDiscoveryUrl, headers)).await()
             val html = response.body?.string() ?: ""
             response.close()
             val domainRegex = Regex("""https://[a-z0-9]+\.[a-z]+""")
@@ -119,14 +119,16 @@ class Kanliao : HttpSource() {
         ensureDomainWorks()
 
         var url = urlBuilder()
-        var response = client.newCall(GET(url, headers)).awaitSuccess()
+        // Use await() instead of awaitSuccess() so we can check the status code ourselves
+        // and retry with a different domain before throwing an error.
+        var response = client.newCall(GET(url, headers)).await()
 
         if (response.code == 404 || response.code == 502 || response.code == 503) {
             response.close()
             domainVerified = false
             ensureDomainWorks()
             url = urlBuilder()
-            response = client.newCall(GET(url, headers)).awaitSuccess()
+            response = client.newCall(GET(url, headers)).await()
         }
 
         if (!response.isSuccessful) {
@@ -379,18 +381,26 @@ class Kanliao : HttpSource() {
         val fragment = chapter.url.substringAfter("#", "")
 
         if (fragment == "images") {
-            return getImagePages(chapter)
+            val pages = getImagePages(chapter)
+            if (pages.isNotEmpty()) return pages
+            // Fallback to all pages if image extraction failed
         }
 
         if (fragment.startsWith("video=")) {
             val videoIndex = fragment.substringAfter("video=").toIntOrNull() ?: 0
-            return getVideoPages(chapter, videoIndex)
+            val pages = getVideoPages(chapter, videoIndex)
+            if (pages.isNotEmpty()) return pages
+            // Fallback to all pages if video extraction failed
         }
 
-        // Default: try video first, then images
+        // Default: try all pages (videos + images)
         val response = fetchWithDomainRecovery { getChapterUrl(chapter) }
         val document = response.asJsoup()
-        return parseAllPages(document)
+        val allPages = parseAllPages(document)
+        if (allPages.isNotEmpty()) return allPages
+
+        // Last resort: return a placeholder page so the reader doesn't show "empty"
+        return listOf(Page(0, imageUrl = ""))
     }
 
     /**
