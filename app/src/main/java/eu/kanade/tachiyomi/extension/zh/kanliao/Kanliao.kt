@@ -14,6 +14,9 @@ import eu.kanade.tachiyomi.source.model.UpdateStrategy
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import uy.kohesive.injekt.Injekt
@@ -25,9 +28,35 @@ import java.util.Locale
 class Kanliao : HttpSource() {
 
     override val name = "今日看料"
-    override val baseUrl = "https://kanliao16.one"
     override val lang = "zh"
     override val supportsLatest = true
+
+    /**
+     * The domain discovery page that lists all current working domains.
+     * Encoded as punycode: 回家.今日看料.com
+     */
+    private val domainDiscoveryUrl = "https://xn--zbsq6i.xn--wmqx96crga604d.com/"
+
+    /**
+     * Known fallback domains, tried in order if the primary domain fails.
+     * Updated from the domain discovery page.
+     */
+    private val knownDomains = listOf(
+        "https://kanliao30.com",
+        "https://kanliao22.net",
+        "https://kanliao20.org",
+        "https://kanliao19.one",
+        "https://kanliao23.cyou",
+        "https://kanliao17.buzz",
+    )
+
+    /**
+     * Current working base URL. Initialized to the first known domain and
+     * automatically updated when a domain fails.
+     */    @Volatile
+    private var currentBaseUrl: String = knownDomains.first()
+
+    override val baseUrl: String get() = currentBaseUrl
 
     // Override client to avoid injectLazy() issues with direct constructor instantiation
     override val client get() = Injekt.get<NetworkHelper>().client
@@ -39,14 +68,82 @@ class Kanliao : HttpSource() {
         add("Referer", baseUrl)
     }
 
+    /**
+     * Execute a request, and if it returns 404 or fails, try refreshing the domain.
+     * This makes the source resilient to domain changes.
+     */    private suspend fun fetchWithDomainRecovery(urlBuilder: () -> String): Response {
+        var url = urlBuilder()
+        var response = client.newCall(GET(url, headers)).execute()
+
+        if (response.code == 404 || response.code == 502 || response.code == 503) {
+            response.close()
+            // Try to find a working domain
+            val newDomain = findWorkingDomain()
+            if (newDomain != null) {
+                currentBaseUrl = newDomain
+                url = urlBuilder()
+                response = client.newCall(GET(url, headers)).execute()
+            }
+        }
+
+        if (!response.isSuccessful) {
+            response.close()
+            throw eu.kanade.tachiyomi.network.HttpException(response.code)
+        }
+
+        return response
+    }
+
+    /**
+     * Check which domain is currently working by hitting their /ping endpoint.
+     * Returns the first working domain URL, or null if none work.
+     */    private suspend fun findWorkingDomain(): String? {
+        for (domain in knownDomains) {
+            try {
+                val pingResponse = client.newCall(GET("$domain/ping", headers)).execute()
+                val body = pingResponse.body?.string()
+                pingResponse.close()
+                if (body?.trim() == "pong") {
+                    return domain
+                }
+            } catch (_: Exception) {
+                // Try next domain
+            }
+        }
+        // Last resort: try to fetch new domains from the discovery page
+        try {
+            val response = client.newCall(GET(domainDiscoveryUrl, headers)).execute()
+            val html = response.body?.string() ?: ""
+            response.close()
+            // Extract domains from the JavaScript array in the page
+            val domainRegex = Regex("""https://[a-z0-9]+\.[a-z]+""")
+            val domains = domainRegex.findAll(html).map { it.value }.distinct().toList()
+            for (domain in domains) {
+                try {
+                    val pingResponse = client.newCall(GET("$domain/ping", headers)).execute()
+                    val body = pingResponse.body?.string()
+                    pingResponse.close()
+                    if (body?.trim() == "pong") {
+                        return domain
+                    }
+                } catch (_: Exception) {
+                    // Try next
+                }
+            }
+        } catch (_: Exception) {
+            // Discovery page also failed
+        }
+        return null
+    }
+
     override suspend fun getPopularManga(page: Int): MangasPage {
-        val response = client.newCall(GET("$baseUrl/", headers)).awaitSuccess()
+        val response = fetchWithDomainRecovery { "$baseUrl/" }
         val document = response.asJsoup()
         return parseMangaList(document)
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage {
-        val response = client.newCall(GET("$baseUrl/category/dy/", headers)).awaitSuccess()
+        val response = fetchWithDomainRecovery { "$baseUrl/category/dy/" }
         val document = response.asJsoup()
         return parseMangaList(document)
     }
@@ -69,7 +166,7 @@ class Kanliao : HttpSource() {
             }
         }
 
-        val response = client.newCall(GET(url, headers)).awaitSuccess()
+        val response = fetchWithDomainRecovery { url.toString() }
         val document = response.asJsoup()
         return parseMangaList(document)
     }
@@ -130,7 +227,7 @@ class Kanliao : HttpSource() {
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
-        val response = client.newCall(GET(getMangaUrl(manga), headers)).awaitSuccess()
+        val response = fetchWithDomainRecovery { getMangaUrl(manga) }
         val document = response.asJsoup()
         return SMangaUpdate(
             manga = parseMangaDetails(document, manga),
@@ -206,7 +303,7 @@ class Kanliao : HttpSource() {
     override fun getChapterUrl(chapter: SChapter): String = "$baseUrl${chapter.url}"
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val response = client.newCall(GET(getChapterUrl(chapter), headers)).awaitSuccess()
+        val response = fetchWithDomainRecovery { getChapterUrl(chapter) }
         val document = response.asJsoup()
         val pages = mutableListOf<Page>()
 
