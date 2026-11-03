@@ -32,7 +32,10 @@ class Kanliao : HttpSource() {
     // Override client to avoid injectLazy() issues with direct constructor instantiation
     override val client get() = Injekt.get<NetworkHelper>().client
 
-    override fun headersBuilder() = super.headersBuilder().apply {
+    // Do NOT call super.headersBuilder() because it uses `network.defaultUserAgentProvider()`
+    // which relies on injectLazy() and fails when Kanliao is directly instantiated (not via DI).
+    override fun headersBuilder(): okhttp3.Headers.Builder = okhttp3.Headers.Builder().apply {
+        add("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
         add("Referer", baseUrl)
     }
 

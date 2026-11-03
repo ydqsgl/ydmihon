@@ -55,9 +55,13 @@ class AndroidSourceManager(
                         mapOf(LocalSource.ID to localSource),
                     )
                     // Register built-in Kanliao source
-                    val kanliaoSource = Kanliao()
-                    mutableMap[kanliaoSource.id] = kanliaoSource
-                    registerStubSource(StubSource.from(kanliaoSource))
+                    try {
+                        val kanliaoSource = Kanliao()
+                        mutableMap[kanliaoSource.id] = kanliaoSource
+                        registerStubSource(StubSource.from(kanliaoSource))
+                    } catch (e: Exception) {
+                        logcat(LogPriority.ERROR) { "Failed to register built-in Kanliao source: ${e.message}" }
+                    }
                     extensions.forEach { extension ->
                         extension.sources.forEach {
                             mutableMap[it.id] = it
