@@ -35,7 +35,7 @@ android {
     namespace = "eu.kanade.tachiyomi"
 
     defaultConfig {
-        applicationId = "app.mihon"
+        applicationId = "app.ydmihon"
 
 versionCode = 7
 versionName = "1.0.6"
@@ -68,6 +68,19 @@ versionName = "1.0.6"
         }
     }
 
+    // YDMihon: Use our own signing key for custom builds
+    val ydKeystore = file("ydmihon.jks")
+    if (ydKeystore.exists()) {
+        signingConfigs {
+            create("ydmihon") {
+                storeFile = ydKeystore
+                storePassword = "ydmihon2024"
+                keyAlias = "ydmihon"
+                keyPassword = "ydmihon2024"
+            }
+        }
+    }
+
     buildTypes {
         val debug = getByName("debug") {
             applicationIdSuffix = ".dev"
@@ -77,7 +90,12 @@ versionName = "1.0.6"
             isMinifyEnabled = true
             isShrinkResources = true
 
-            signingConfig = debug.signingConfig
+            // YDMihon: prefer our own signing config, fallback to debug
+            signingConfig = try {
+                signingConfigs.getByName("ydmihon")
+            } catch (e: Exception) {
+                debug.signingConfig
+            }
 
             isProfileable = true
 

@@ -38,7 +38,7 @@ class AppUpdateChecker(
                     ),
                 )
             } catch (e: Exception) {
-                logcat(LogPriority.WARN, e)
+                logcat(LogPriority.WARN) { "Standard update check failed: ${e.message}" }
                 null
             }
         }
@@ -53,7 +53,7 @@ class AppUpdateChecker(
             try {
                 checkForUpdateFallback()
             } catch (e: Exception) {
-                logcat(LogPriority.ERROR, e)
+                logcat(LogPriority.ERROR) { "Fallback update check failed: ${e.message}" }
                 GetApplicationRelease.Result.NoNewUpdate
             }
         }
