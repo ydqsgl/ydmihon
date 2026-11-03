@@ -415,13 +415,37 @@ class Kanliao : HttpSource() {
     }
 
     /**
-     * Fix a URL to ensure it has a proper http:// or https:// scheme.
-     * Handles protocol-relative URLs (//example.com/path) and relative paths.
+     * Fix a URL to ensure it uses the current working domain.
+     * - Replaces any known stale kanliao domain (or subdomain containing "kanliao") with the current baseUrl.
+     * - Handles protocol-relative URLs (//example.com/path) and relative paths.
      */
     private fun fixUrl(url: String): String {
         if (url.isBlank()) return ""
-        if (url.startsWith("http://") || url.startsWith("https://")) return url
+
+        // Already an absolute URL — check if its host contains "kanliao"
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            val hostPart = try {
+                val afterScheme = url.substringAfter("://")
+                afterScheme.substringBefore("/").substringBefore(":")
+            } catch (_: Exception) { "" }
+
+            val currentHost = currentBaseUrl.substringAfter("://").substringBefore("/")
+
+            // If the host contains "kanliao" and is NOT the current domain, replace it
+            if (hostPart != currentHost && hostPart.contains("kanliao", ignoreCase = true)) {
+                val pathAndQuery = url.substringAfter("://").substringAfter("/", "")
+                return if (pathAndQuery.isNotEmpty()) {
+                    "$baseUrl/$pathAndQuery"
+                } else {
+                    baseUrl
+                }
+            }
+            return url
+        }
+
+        // Protocol-relative URL (e.g. //cdn.example.com/video.m3u8)
         if (url.startsWith("//")) return "https:$url"
+        // Relative path - prepend base URL
         if (url.startsWith("/")) return "$baseUrl$url"
         return "$baseUrl/$url"
     }
