@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.extension.zh.kanliao
 
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -15,6 +16,7 @@ import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import uy.kohesive.injekt.Injekt
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -25,6 +27,9 @@ class Kanliao : HttpSource() {
     override val baseUrl = "https://kanliao16.one"
     override val lang = "zh"
     override val supportsLatest = true
+
+    // Override client to avoid injectLazy() issues with direct constructor instantiation
+    override val client get() = Injekt.get<NetworkHelper>().client
 
     override fun headersBuilder() = super.headersBuilder().apply {
         add("Referer", baseUrl)
