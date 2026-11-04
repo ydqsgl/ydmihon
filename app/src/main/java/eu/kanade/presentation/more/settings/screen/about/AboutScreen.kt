@@ -236,6 +236,10 @@ object AboutScreen : Screen() {
                     is GetApplicationRelease.Result.OsTooOld -> {
                         context.toast(MR.strings.update_check_eol)
                     }
+                    is GetApplicationRelease.Result.Failure -> {
+                        // Say *why* instead of silently reporting "up to date".
+                        context.toast("检查更新失败：${result.message}")
+                    }
                 }
             } catch (e: Exception) {
                 context.toast(e.message)

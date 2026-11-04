@@ -67,5 +67,13 @@ class GetApplicationRelease(
         data class NewUpdate(val release: Release) : Result
         data object NoNewUpdate : Result
         data object OsTooOld : Result
+
+        /**
+         * The check could not be completed.
+         *
+         * Reported instead of collapsing into [NoNewUpdate] so the UI can say "check failed"
+         * rather than silently implying the app is up to date.
+         */
+        data class Failure(val message: String) : Result
     }
 }

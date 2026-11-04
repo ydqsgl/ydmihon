@@ -379,6 +379,10 @@ class MainActivity : BaseActivity() {
                     lastCheck = SystemClock.elapsedRealtime()
                     try {
                         val result = context.appGraph.updateChecker.checkForUpdate()
+                        if (result is GetApplicationRelease.Result.Failure) {
+                            // Surfaced so a failed check is never mistaken for "already up to date".
+                            logcat(LogPriority.WARN) { "Update check failed: ${result.message}" }
+                        }
                         if (
                             result is GetApplicationRelease.Result.NewUpdate &&
                             result.release.version != preferences.skippedAppUpdate.get() &&
