@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.zh.chigua.Chigua
 import eu.kanade.tachiyomi.extension.zh.kanliao.Kanliao
+import eu.kanade.tachiyomi.extension.zh.mrds.Mrds
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -55,8 +56,8 @@ class AndroidSourceManager(
                     val mutableMap = ConcurrentHashMap<Long, Source>(
                         mapOf(LocalSource.ID to localSource),
                     )
-                    // Register built-in sources (今日看料, 51吃瓜)
-                    listOf<HttpSource>(Kanliao(), Chigua()).forEach { source ->
+                    // Register built-in sources (今日看料, 51吃瓜, 每日大赛)
+                    listOf<HttpSource>(Kanliao(), Chigua(), Mrds()).forEach { source ->
                         try {
                             mutableMap[source.id] = source
                             registerStubSource(StubSource.from(source))
