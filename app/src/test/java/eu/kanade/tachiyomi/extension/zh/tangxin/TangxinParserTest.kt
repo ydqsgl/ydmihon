@@ -125,6 +125,33 @@ class TangxinParserTest {
     }
 
     @Test
+    fun `listing cards become site-relative paths`() {
+        val base = "https://tangxinvlog.app"
+        val items = TangxinParser.parseListing(document("listing.html"), ::absolute)
+
+        items.shouldNotBeEmpty()
+        items.take(3).forEach { item ->
+            val path = TangxinParser.relativePath(item.url, base)
+            // Must be a stored path, not the whole URL: the DB keeps paths so a domain change
+            // does not orphan the entry.
+            path shouldStartWith "/v/"
+            (path.contains("://")) shouldBe false
+        }
+    }
+
+    @Test
+    fun `index rows become site-relative paths`() {
+        TangxinParser.indexPath("6adae766189d6ebc4f0ec91e") shouldBe "/v/6adae766189d6ebc4f0ec91e/"
+    }
+
+    @Test
+    fun `relative path falls back to the input when the host does not match`() {
+        // A card served from a mirror would otherwise produce an empty path.
+        val path = TangxinParser.relativePath("https://other.host/v/abc/", "https://tangxinvlog.app")
+        path shouldBe "https://other.host/v/abc/"
+    }
+
+    @Test
     fun `a page without a player reports no url`() {
         TangxinParser.parseVideoUrl(Jsoup.parse("<html><body>gone</body></html>")) shouldBe null
     }

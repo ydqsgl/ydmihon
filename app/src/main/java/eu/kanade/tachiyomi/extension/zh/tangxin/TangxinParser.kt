@@ -153,6 +153,20 @@ internal object TangxinParser {
         return null
     }
 
+    /**
+     * Turns a listing card's absolute URL into the site-relative path Mihon stores.
+     *
+     * Kept here (rather than inline in the source) so it can be tested: the same operation is easy
+     * to get wrong inside an `apply` block, where a bare `url` resolves to the *target's* lateinit
+     * property instead of the card's field.
+     */
+    fun relativePath(absoluteUrl: String, baseUrl: String): String {
+        return absoluteUrl.removePrefix(baseUrl).ifBlank { absoluteUrl }
+    }
+
+    /** Path for a catalogue-index row. */
+    fun indexPath(id: String): String = "/v/$id/"
+
     private fun kotlinx.serialization.json.JsonPrimitive.contentOrNullSafe(): String? =
         runCatching { content }.getOrNull()?.takeIf { it != "null" }
 

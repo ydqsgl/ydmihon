@@ -95,27 +95,39 @@ class Tangxin : VideoSource(
     override suspend fun getLatestUpdates(page: Int): MangasPage = listing(page)
 
     private suspend fun listing(page: Int): MangasPage {
+        // The homepage is the site's own ordering and is worth keeping for page 1, but its cards
+        // are also the first entries of the catalogue index. Later pages therefore continue *after*
+        // those cards, otherwise page 2 would repeat most of page 1.
         if (page <= 1) {
             val document = fetchDocument("$baseUrl/")
             val items = TangxinParser.parseListing(document, ::absolute)
             if (items.isNotEmpty()) {
-                return MangasPage(
-                    items.map { it.toManga() },
-                    // The homepage has no next page; pagination continues through the index.
-                    hasNextPage = true,
-                )
+                homepageIds = items.mapNotNull { item ->
+                    // Card URLs look like ".../v/<id>/", so the id is the path segment before the
+                    // trailing slash.
+                    item.url.trimEnd('/').substringAfterLast('/').ifBlank { null }
+                }.toSet()
+                return MangasPage(items.map { it.toManga() }, hasNextPage = true)
             }
         }
 
         val entries = index()
         if (entries.isEmpty()) return MangasPage(emptyList(), false)
 
-        val from = (page - 1) * PAGE_SIZE
-        if (from >= entries.size) return MangasPage(emptyList(), false)
-        val slice = entries.drop(from).take(PAGE_SIZE)
+        // Skip whatever the homepage already showed, then page through the rest.
+        val seen = homepageIds
+        val remaining = if (seen.isEmpty()) entries else entries.filterNot { it.id in seen }
 
-        return MangasPage(slice.map { it.toManga() }, from + slice.size < entries.size)
+        val from = (page - 2).coerceAtLeast(0) * PAGE_SIZE
+        if (from >= remaining.size) return MangasPage(emptyList(), false)
+        val slice = remaining.drop(from).take(PAGE_SIZE)
+
+        return MangasPage(slice.map { it.toManga() }, from + slice.size < remaining.size)
     }
+
+    /** Ids already shown on the homepage, so index paging starts after them. */
+    @Volatile
+    private var homepageIds: Set<String> = emptySet()
 
     /**
      * Search, or a tag listing when a category was picked instead.
@@ -149,7 +161,7 @@ class Tangxin : VideoSource(
      * builds the same path for its own cards.
      */
     private fun TangxinParser.IndexEntry.toManga(): SManga = SManga.create().apply {
-        setUrlWithoutDomain("/v/$id/")
+        setUrlWithoutDomain(TangxinParser.indexPath(id))
         title = this@toManga.title
         thumbnail_url = "$COVER_BASE$id/cover.jpg"
         initialized = true
@@ -179,7 +191,9 @@ class Tangxin : VideoSource(
     }
 
     private fun TangxinParser.ListingItem.toManga(): SManga = SManga.create().apply {
-        setUrlWithoutDomain(url.removePrefix(baseUrl))
+        // `this@toManga.url`, not `url`: inside `apply` the bare name resolves to SManga's own
+        // lateinit `url`, which is still uninitialised here and throws on read.
+        setUrlWithoutDomain(TangxinParser.relativePath(this@toManga.url, baseUrl))
         title = this@toManga.title
         thumbnail_url = this@toManga.thumbnailUrl
         initialized = true

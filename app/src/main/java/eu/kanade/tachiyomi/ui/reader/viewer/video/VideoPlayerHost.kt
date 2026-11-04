@@ -80,7 +80,9 @@ fun VideoPlayerHost(
             .setAllowCrossProtocolRedirects(true)
 
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(dataSourceFactory.unwrapPngDisguise()),
+            )
             .build()
     }
 
@@ -420,7 +422,10 @@ private fun buildMediaItem(videoUrl: String): MediaItem {
         path.endsWith(".mp4") || path.endsWith(".m4v") -> MimeTypes.VIDEO_MP4
         path.endsWith(".webm") -> MimeTypes.VIDEO_WEBM
         path.endsWith(".mkv") -> "video/x-matroska"
-        else -> null
+        // Some hosts hand out HLS from an endpoint with no useful suffix ("/api/hls/<id>", or a
+        // playlist disguised as ".png"). The reader only ever plays HLS or plain files, so an
+        // unknown suffix is treated as HLS rather than left for ExoPlayer to guess wrong.
+        else -> MimeTypes.APPLICATION_M3U8
     }
 
     return MediaItem.Builder()
