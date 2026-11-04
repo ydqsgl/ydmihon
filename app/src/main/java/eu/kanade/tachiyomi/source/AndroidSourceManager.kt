@@ -6,6 +6,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.extension.ExtensionManager
+import eu.kanade.tachiyomi.extension.zh.chigua.Chigua
 import eu.kanade.tachiyomi.extension.zh.kanliao.Kanliao
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.CoroutineScope
@@ -54,13 +55,16 @@ class AndroidSourceManager(
                     val mutableMap = ConcurrentHashMap<Long, Source>(
                         mapOf(LocalSource.ID to localSource),
                     )
-                    // Register built-in Kanliao source
-                    try {
-                        val kanliaoSource = Kanliao()
-                        mutableMap[kanliaoSource.id] = kanliaoSource
-                        registerStubSource(StubSource.from(kanliaoSource))
-                    } catch (e: Exception) {
-                        logcat(LogPriority.ERROR) { "Failed to register built-in Kanliao source: ${e.message}" }
+                    // Register built-in sources (今日看料, 51吃瓜)
+                    listOf<HttpSource>(Kanliao(), Chigua()).forEach { source ->
+                        try {
+                            mutableMap[source.id] = source
+                            registerStubSource(StubSource.from(source))
+                        } catch (e: Exception) {
+                            logcat(LogPriority.ERROR) {
+                                "Failed to register built-in source ${source.name}: ${e.message}"
+                            }
+                        }
                     }
                     extensions.forEach { extension ->
                         extension.sources.forEach {

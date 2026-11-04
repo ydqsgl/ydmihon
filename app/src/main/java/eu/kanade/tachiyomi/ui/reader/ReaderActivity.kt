@@ -5,11 +5,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
@@ -155,6 +157,13 @@ class ReaderActivity : BaseActivity() {
     private var isLoadingViewer by mutableStateOf(false)
 
     /**
+     * True while the video player holds the activity in landscape fullscreen.
+     * Compose reads this directly so the player chrome follows a system back press.
+     */
+    var videoFullscreen by mutableStateOf(false)
+        private set
+
+    /**
      * Viewer used to display the pages (pager, webtoon, ...).
      */
     private val viewerFlow = MutableStateFlow<Viewer?>(null)
@@ -185,6 +194,22 @@ class ReaderActivity : BaseActivity() {
             window.isNavigationBarContrastEnforced = false
         }
         windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        // A fullscreen video consumes back to leave fullscreen instead of closing the reader.
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (videoFullscreen) {
+                        applyVideoFullscreen(false)
+                    } else {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
+                }
+            },
+        )
 
         super.onCreate(savedInstanceState)
 
@@ -244,7 +269,9 @@ class ReaderActivity : BaseActivity() {
                     colorBlendMode = colorOverlayBlendMode,
                 )
 
-                if (!state.menuVisible && showPageNumber) {
+                // The video player draws its own time bar, so a page counter would overlap it.
+                val hasVideoPage = viewer is eu.kanade.tachiyomi.ui.reader.viewer.VideoViewer
+                if (!state.menuVisible && showPageNumber && !hasVideoPage) {
                     ReaderPageIndicator(
                         currentPage = state.currentPage,
                         totalPages = state.totalPages,
@@ -619,8 +646,11 @@ class ReaderActivity : BaseActivity() {
     private fun setMenuVisibility(visible: Boolean) {
         viewModel.showMenus(visible)
         if (visible) {
-            windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
-        } else if (readerPreferences.fullscreen.get()) {
+            // Fullscreen video keeps the bars hidden so the picture is never cropped by them.
+            if (!videoFullscreen) {
+                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+            }
+        } else if (readerPreferences.fullscreen.get() || videoFullscreen) {
             windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
         }
     }
@@ -875,9 +905,31 @@ class ReaderActivity : BaseActivity() {
      * Forces the user preferred [orientation] on the activity.
      */
     private fun setOrientation(orientation: Int) {
+        // The video player owns the orientation while it is fullscreen.
+        if (videoFullscreen) return
         val newOrientation = ReaderOrientation.fromPreference(orientation)
         if (newOrientation.flag != requestedOrientation) {
             requestedOrientation = newOrientation.flag
+        }
+    }
+
+    /**
+     * Puts the activity in landscape while the video player is fullscreen, independent of the
+     * orientation preference chosen for the manga. Restores that preference on exit.
+     */
+    fun applyVideoFullscreen(fullscreen: Boolean) {
+        videoFullscreen = fullscreen
+        requestedOrientation = when {
+            fullscreen -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else -> ReaderOrientation.fromPreference(viewModel.getMangaOrientation()).flag
+        }
+        windowInsetsController.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (fullscreen) {
+            windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            // Restore whatever the reader menu state asks for, not always the bars.
+            setMenuVisibility(viewModel.state.value.menuVisible)
         }
     }
 

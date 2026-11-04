@@ -37,8 +37,8 @@ android {
     defaultConfig {
         applicationId = "app.ydmihon"
 
-versionCode = 14
-versionName = "1.0.13"
+        versionCode = 15
+        versionName = "1.1.0"
 
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "${Config.includeTelemetry}")
         buildConfigField("boolean", "UPDATER_ENABLED", "true")
@@ -68,8 +68,9 @@ versionName = "1.0.13"
         }
     }
 
-    // YDMihon: Use our own signing key for custom builds
-    val ydKeystore = file("ydmihon.jks")
+    // YDMihon: Use our own signing key for custom builds.
+    // The keystore lives at the repository root, not in the app module.
+    val ydKeystore = layout.settingsDirectory.file("ydmihon.jks").asFile
     if (ydKeystore.exists()) {
         signingConfigs {
             create("ydmihon") {
