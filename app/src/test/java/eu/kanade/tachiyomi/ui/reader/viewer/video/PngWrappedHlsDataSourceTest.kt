@@ -69,6 +69,34 @@ class PngWrappedHlsDataSourceTest {
     }
 
     @Test
+    fun `a real hls playlist with aes keys is not mangled`() {
+        // 51吃瓜 / 每日大赛 serve playlists like this: plain text, AES-128 key, .ts segments.
+        // The wrapper must not touch it — buffering or rewriting here breaks their playback.
+        val playlist = """
+            #EXTM3U
+            #EXT-X-VERSION:3
+            #EXT-X-KEY:METHOD=AES-128,URI="https://mts.example.com/crypt.key?auth_key=1-2-3",IV=0x6b48
+            #EXT-X-TARGETDURATION:6
+            #EXTINF:5.756,
+            https://mts.example.com/seg0.ts?auth_key=1-2-3
+            #EXTINF:4.796,
+            https://mts.example.com/seg1.ts?auth_key=1-2-3
+        """.trimIndent().toByteArray()
+
+        val decoded = PngWrappedHlsDataSource.decode(playlist)
+
+        decoded shouldBe playlist
+        String(decoded, Charsets.UTF_8) shouldStartWith "#EXTM3U"
+    }
+
+    @Test
+    fun `a raw transport stream passes through untouched`() {
+        // Segments from these sources are plain MPEG-TS, not PNG-wrapped.
+        val ts = ByteArray(188 * 4).apply { this[0] = 0x47; this[188] = 0x47 }
+        PngWrappedHlsDataSource.decode(ts) shouldBe ts
+    }
+
+    @Test
     fun `an ordinary png without the chunk passes through untouched`() {
         // A minimal PNG: signature + IHDR + IEND, no custom chunk.
         val plainPng = byteArrayOf(

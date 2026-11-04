@@ -81,7 +81,7 @@ fun VideoPlayerHost(
 
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(
-                DefaultMediaSourceFactory(dataSourceFactory.unwrapPngDisguise()),
+                DefaultMediaSourceFactory(dataSourceFactory.unwrapPngDisguise(videoUrl.orEmpty())),
             )
             .build()
     }
