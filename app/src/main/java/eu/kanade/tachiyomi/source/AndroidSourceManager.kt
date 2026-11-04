@@ -6,9 +6,16 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.extension.ExtensionManager
+import eu.kanade.tachiyomi.extension.zh.cavporn.Cavporn
 import eu.kanade.tachiyomi.extension.zh.chigua.Chigua
+import eu.kanade.tachiyomi.extension.zh.hsck.Hsck
+import eu.kanade.tachiyomi.extension.zh.huangvideo.HuangVideo
 import eu.kanade.tachiyomi.extension.zh.kanliao.Kanliao
 import eu.kanade.tachiyomi.extension.zh.mrds.Mrds
+import eu.kanade.tachiyomi.extension.zh.rou.Rou
+import eu.kanade.tachiyomi.extension.zh.taiav.Taiav
+import eu.kanade.tachiyomi.extension.zh.tangxin.Tangxin
+import eu.kanade.tachiyomi.extension.zh.xxcosplay.Xxcosplay
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -57,7 +64,18 @@ class AndroidSourceManager(
                         mapOf(LocalSource.ID to localSource),
                     )
                     // Register built-in sources (今日看料, 51吃瓜, 每日大赛)
-                    listOf<HttpSource>(Kanliao(), Chigua(), Mrds()).forEach { source ->
+                    listOf<HttpSource>(
+                        Kanliao(),
+                        Chigua(),
+                        Mrds(),
+                        Hsck(),
+                        Rou(),
+                        Cavporn(),
+                        Taiav(),
+                        HuangVideo(),
+                        Tangxin(),
+                        Xxcosplay(),
+                    ).forEach { source ->
                         try {
                             mutableMap[source.id] = source
                             registerStubSource(StubSource.from(source))
