@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.zh.kanliao
 
+import eu.kanade.tachiyomi.extension.zh.cdn.EncryptedImageCdn
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.await
@@ -22,6 +23,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import okhttp3.Headers
+import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -72,7 +74,15 @@ class Kanliao : HttpSource() {
      */
     private val nextPageUrls = ConcurrentHashMap<String, String>()
 
-    override val client get() = Injekt.get<NetworkHelper>().client
+    /**
+     * The shared client plus image decryption: every cover and article image on this site is
+     * served as AES ciphertext from the CDN, so it has to be decrypted before decoding.
+     */
+    private val decryptedClient: OkHttpClient by lazy {
+        EncryptedImageCdn.client(Injekt.get<NetworkHelper>().client)
+    }
+
+    override val client: OkHttpClient get() = decryptedClient
 
     /**
      * Built per request (instead of the lazily-cached [headers]) so the Referer always

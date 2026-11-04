@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.zh.chigua
 
+import eu.kanade.tachiyomi.extension.zh.cdn.EncryptedImageCdn
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.await
@@ -16,6 +17,7 @@ import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.Headers
+import okhttp3.OkHttpClient
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
 import uy.kohesive.injekt.Injekt
@@ -66,7 +68,15 @@ class Chigua : HttpSource() {
      */
     private val nextPageUrls = ConcurrentHashMap<String, String>()
 
-    override val client get() = Injekt.get<NetworkHelper>().client
+    /**
+     * The shared client plus image decryption: every cover and article image on this site is
+     * served as AES ciphertext from the CDN, so it has to be decrypted before decoding.
+     */
+    private val decryptedClient: OkHttpClient by lazy {
+        EncryptedImageCdn.client(Injekt.get<NetworkHelper>().client)
+    }
+
+    override val client: OkHttpClient get() = decryptedClient
 
     /**
      * Built per request so the Referer matches the domain currently in use.
