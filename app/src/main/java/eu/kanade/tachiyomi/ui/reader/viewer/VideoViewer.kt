@@ -27,12 +27,6 @@ import eu.kanade.tachiyomi.ui.reader.viewer.video.VideoPlayerHost
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-/** 123AV's HLS CDN host, which expects the embed origin as the Referer. */
-private const val PIPER_STREAM_HOST = "piper-store.site"
-
-/** Origin of the 123AV embed player, the Referer that host requires. */
-private const val SADIE_EMBED_ORIGIN = "https://sadie-shop.site/"
-
 /**
  * A viewer that plays video content (m3u8, mp4, etc.) using ExoPlayer.
  * Used when pages contain [Page.videoUrl] instead of image URLs.
@@ -56,14 +50,14 @@ class VideoViewer(private val activity: ReaderActivity) : Viewer {
         val currentPage = pages.getOrNull(currentIndex)
         val videoUrl = currentPage?.videoUrl
 
-        // The site's CDN rejects requests without a matching Referer/UA. 123AV's playlist CDN
-        // (piper-store.site) expects the embed origin (sadie-shop.site) instead of the catalogue
-        // origin, so scope a small override to that host — no other source is affected.
+        // The site's CDN rejects requests without a matching Referer/UA. 123AV serves its playlist
+        // from a rotating CDN that expects the embed origin instead of the catalogue origin; every
+        // other source keeps the plain chapter origin (see [PlaybackReferer]).
         val referer = remember(videoUrl) {
-            val chapterOrigin = activity.viewModel.getChapterUrl()
-                ?.toHttpUrlOrNull()
-                ?.let { "${it.scheme}://${it.host}/" }
-            if (videoUrl?.contains(PIPER_STREAM_HOST) == true) SADIE_EMBED_ORIGIN else chapterOrigin
+            PlaybackReferer.refererFor(
+                chapterHost = activity.viewModel.getChapterUrl()?.toHttpUrlOrNull()?.host,
+                videoHost = videoUrl?.toHttpUrlOrNull()?.host,
+            )
         }
 
         Box(modifier = modifier.background(Color.Black)) {

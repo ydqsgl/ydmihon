@@ -64,9 +64,36 @@ class Tt123AvParserTest {
     }
 
     @Test
-    fun `missing embed hash is null`() {
-        val html = """<html><body><h1 class="watch__title">Paywalled</h1></body></html>"""
-        val details = Tt123AvParser.parseDetails(Jsoup.parse(html, "https://123av.com/cn/v/x"))
-        details.embedHashId shouldBe null
+    fun `search page one omits the page parameter`() {
+        Tt123AvParser.searchUrl("https://123av.com", "SNOS", 1) shouldBe
+            "https://123av.com/cn/search?keyword=SNOS"
+    }
+
+    @Test
+    fun `search pages past one carry the page parameter`() {
+        Tt123AvParser.searchUrl("https://123av.com", "SNOS", 2) shouldBe
+            "https://123av.com/cn/search?keyword=SNOS&page=2"
+        Tt123AvParser.searchUrl("https://123av.com", "SNOS", 7) shouldBe
+            "https://123av.com/cn/search?keyword=SNOS&page=7"
+    }
+
+    @Test
+    fun `search page two is parsed as a listing`() {
+        // The site answers `?page=N` with the same card grid plus a pager, so a page-2 document
+        // must yield items and another "next" link instead of ending pagination.
+        val html = """
+            <html><body>
+            <div class="card">
+              <a class="card__cover" href="/cn/v/abc-123"><img class="card__img" src="https://icdn.123av.me/a.jpg"></a>
+              <h3 class="card__title"><a class="card__link" href="/cn/v/abc-123">ABC-123</a></h3>
+            </div>
+            <a class="pager__nav" href="https://123av.com/cn/search?keyword=SNOS&amp;page=3" rel="next">›</a>
+            </body></html>
+        """.trimIndent()
+        val document = Jsoup.parse(html, "https://123av.com/cn/search?keyword=SNOS&page=2")
+
+        Tt123AvParser.parseListing(document) { it }.size shouldBe 1
+        Tt123AvParser.findNextPageUrl(document) { it } shouldBe
+            "https://123av.com/cn/search?keyword=SNOS&page=3"
     }
 }

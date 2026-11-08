@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.extension.zh.tt123av
 
 import org.jsoup.nodes.Document
+import java.net.URLEncoder
 
 /**
  * Parsing for 123AV (123av.com/cn) — a JAV catalogue.
@@ -74,6 +75,19 @@ internal object Tt123AvParser {
     /** `sadie-shop.site/e/<hashId>` — the first embed source on the page. */
     private fun extractEmbedHashId(html: String): String? =
         EMBED_REGEX.find(html)?.groupValues?.get(1)
+
+    /**
+     * Search results URL for [page]. The site answers `?page=N` with the same 12-card grid, so the
+     * page number must be present for paging past the first result set.
+     */
+    fun searchUrl(baseUrl: String, keyword: String, page: Int): String {
+        val encoded = URLEncoder.encode(keyword, "UTF-8")
+        return if (page <= 1) {
+            "$baseUrl/cn/search?keyword=$encoded"
+        } else {
+            "$baseUrl/cn/search?keyword=$encoded&page=$page"
+        }
+    }
 
     data class Details(
         val title: String,

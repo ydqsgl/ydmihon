@@ -37,8 +37,8 @@ android {
     defaultConfig {
         applicationId = "app.ydmihon"
 
-        versionCode = 23
-        versionName = "1.4.0"
+        versionCode = 24
+        versionName = "1.4.1"
 
         buildConfigField("boolean", "TELEMETRY_INCLUDED", "${Config.includeTelemetry}")
         buildConfigField("boolean", "UPDATER_ENABLED", "true")

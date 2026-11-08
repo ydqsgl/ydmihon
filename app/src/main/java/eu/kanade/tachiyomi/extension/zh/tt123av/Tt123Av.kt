@@ -32,8 +32,13 @@ class Tt123Av : VideoSource(
     /** `/cn/new` is the catalogue feed; page 2+ comes from the rendered `rel=next` link. */
     override fun listingUrl(page: Int): String = "$baseUrl/cn/new"
 
+    /**
+     * Search results paginate with the same `?page=N` scheme as the feed. The shared
+     * [VideoSource] lookup only trusts a learned "next" link for keyword-less browsing, so the
+     * page number has to be part of this URL for search to page past the first result set.
+     */
     override fun searchUrlFor(keyword: String, page: Int): String =
-        "$baseUrl/cn/search?keyword=${keyword.encodeURLQuery()}"
+        Tt123AvParser.searchUrl(baseUrl, keyword, page)
 
     override fun parseListing(document: Document, page: Int): List<ListingItem> =
         Tt123AvParser.parseListing(document, ::absolute).map {
@@ -80,9 +85,6 @@ class Tt123Av : VideoSource(
         .add("User-Agent", eu.kanade.tachiyomi.extension.zh.common.VideoSourceSupport.USER_AGENT)
         .add("Accept", "application/json, text/plain, */*")
         .build()
-
-    private fun String.encodeURLQuery(): String =
-        java.net.URLEncoder.encode(this, "UTF-8")
 
     companion object {
         private val STREAM_URL_REGEX = Regex(""""stream"\s*:\s*"(https?://[^"]+)"""")
