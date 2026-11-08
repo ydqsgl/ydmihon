@@ -11,6 +11,7 @@ import eu.kanade.tachiyomi.extension.zh.chigua.Chigua
 import eu.kanade.tachiyomi.extension.zh.hsck.Hsck
 import eu.kanade.tachiyomi.extension.zh.huangvideo.HuangVideo
 import eu.kanade.tachiyomi.extension.zh.kanliao.Kanliao
+import eu.kanade.tachiyomi.extension.zh.koreanporn.KoreanPornMovie
 import eu.kanade.tachiyomi.extension.zh.mrds.Mrds
 import eu.kanade.tachiyomi.extension.zh.rou.Rou
 import eu.kanade.tachiyomi.extension.zh.taiav.Taiav
@@ -75,6 +76,7 @@ class AndroidSourceManager(
                         HuangVideo(),
                         Tangxin(),
                         Xxcosplay(),
+                        KoreanPornMovie(),
                     ).forEach { source ->
                         try {
                             mutableMap[source.id] = source
