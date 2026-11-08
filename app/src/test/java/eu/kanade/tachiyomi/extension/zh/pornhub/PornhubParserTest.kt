@@ -20,13 +20,13 @@ class PornhubParserTest {
     }
 
     private fun document(name: String): Document =
-        Jsoup.parse(load(name), "https://cn.pornhub.com/video")
+        Jsoup.parse(load(name), "https://www.pornhub.com/video")
 
     private fun absolute(url: String): String = when {
         url.startsWith("http") -> url
         url.startsWith("//") -> "https:$url"
-        url.startsWith("/") -> "https://cn.pornhub.com$url"
-        else -> "https://cn.pornhub.com/$url"
+        url.startsWith("/") -> "https://www.pornhub.com$url"
+        else -> "https://www.pornhub.com/$url"
     }
 
     @Test
@@ -66,7 +66,7 @@ class PornhubParserTest {
         val html = load("listing.html").replace(Regex("""page=(\d+)""")) {
             "page=${it.groupValues[1].toInt() + 2}"
         }
-        val doc = Jsoup.parse(html, "https://cn.pornhub.com/video")
+        val doc = Jsoup.parse(html, "https://www.pornhub.com/video")
         val next = PornhubParser.findNextPageUrl(doc, 3, ::absolute)
         next.shouldNotBeNull()
         next shouldContain "page=4"
@@ -113,7 +113,7 @@ class PornhubParserTest {
     @Test
     fun `details fall back to dom when flashvars missing`() {
         val html = load("detail.html").replace(Regex("""<script>[\s\S]*?</script>"""), "")
-        val doc = Jsoup.parse(html, "https://cn.pornhub.com/view_video.php")
+        val doc = Jsoup.parse(html, "https://www.pornhub.com/view_video.php")
         val details = PornhubParser.parseDetails(doc, ::absolute)
         details.title shouldContain "摩洛伊斯兰解放阵线"
         details.coverUrl.shouldNotBeNull()

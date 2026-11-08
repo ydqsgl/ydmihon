@@ -5,7 +5,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import org.jsoup.nodes.Document
 
 /**
- * Pornhub (cn.pornhub.com) — a large international tube site.
+ * Pornhub (www.pornhub.com) — a large international tube site.
  *
  * Pornhub renders its catalogue and the player's `flashvars` object server-side, so the raw HTML
  * already carries everything the source needs: listing cards with their title attribute and signed
@@ -19,12 +19,15 @@ import org.jsoup.nodes.Document
  *   residential/mobile IP and a real browser UA, which Pornhub serves normally; requests carry the
  *   mobile UA plus the catalogue origin as Referer.
  *
- * Search goes through `/video/search?search=<q>`; the browse feed is `/video?o=cm&t=m`. Both
- * paginate with `?page=N`. There is no category filter here: Pornhub's taxonomy is deep and its
- * browse pages are driven by the same feed, so the source keeps the popular feed and search.
+ * The user browses the official `www.pornhub.com`; the `cn.` subdomain resolves to unrelated
+ * IPs (a Dropbox range on public resolvers) and is not a dependable Pornhub host, so the source
+ * pins `www`. Listing is the browse feed `/video?o=cm&t=m` with `?page=N` pagination; search
+ * goes through `/video/search?search=<q>`. There is no category filter here: Pornhub's taxonomy
+ * is deep and its browse pages are driven by the same feed, so the source keeps the popular feed
+ * and search.
  */
 class Pornhub : VideoSource(
-    knownDomains = listOf("https://cn.pornhub.com"),
+    knownDomains = listOf("https://www.pornhub.com"),
 ) {
 
     override val name = "Pornhub"
