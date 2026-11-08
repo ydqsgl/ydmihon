@@ -8,14 +8,26 @@ import org.junit.jupiter.api.Test
 class PlaybackRefererTest {
 
     @Test
-    fun `123av playlist on its rotating cdn uses the embed origin`() {
-        // Both hosts are served for the same clip; matching only one of them broke playback.
-        PlaybackReferer.refererFor("123av.com", "jl77.piper-store.site") shouldBe
-            PlaybackReferer.TT123AV_EMBED_ORIGIN
-        PlaybackReferer.refererFor("123av.com", "jl77.calmquietmind.site") shouldBe
-            PlaybackReferer.TT123AV_EMBED_ORIGIN
-        PlaybackReferer.refererFor("www.123av.com", "jl12.example-cdn.site") shouldBe
-            PlaybackReferer.TT123AV_EMBED_ORIGIN
+    fun `every 123av cdn host uses the embed origin`() {
+        // Observed in the wild for different clips and regions. Pinning one hostname is what broke
+        // playback before, so all known shapes are covered here.
+        listOf(
+            "jl77.piper-store.site",
+            "jl77.calmquietmind.site",
+            "e625.highpurevibe.site",
+            "some-future-host.example",
+        ).forEach { host ->
+            PlaybackReferer.refererFor("123av.com", host) shouldBe
+                PlaybackReferer.TT123AV_EMBED_ORIGIN
+        }
+    }
+
+    @Test
+    fun `123av catalogue hosts keep the catalogue origin`() {
+        // The site itself and its image CDN are not the clip CDN.
+        PlaybackReferer.refererFor("123av.com", "123av.com") shouldBe "https://123av.com/"
+        PlaybackReferer.refererFor("123av.com", "icdn.123av.me") shouldBe "https://123av.com/"
+        PlaybackReferer.refererFor("123av.com", null) shouldBe "https://123av.com/"
     }
 
     @Test
@@ -26,20 +38,22 @@ class PlaybackRefererTest {
     }
 
     @Test
-    fun `a rotating cdn on a non-123av source is not overridden`() {
-        // The CDN shape alone must not trigger the 123AV rule.
-        PlaybackReferer.refererFor("someother.site", "jl77.piper-store.site") shouldBe
+    fun `a 123av style cdn on another source is not overridden`() {
+        // The CDN host alone must not trigger the 123AV rule.
+        PlaybackReferer.refererFor("someother.site", "e625.highpurevibe.site") shouldBe
             "https://someother.site/"
-    }
-
-    @Test
-    fun `123av on a non-cdn host keeps the chapter origin`() {
-        PlaybackReferer.refererFor("123av.com", "icdn.123av.me") shouldBe "https://123av.com/"
     }
 
     @Test
     fun `unknown chapter url yields no referer`() {
         PlaybackReferer.refererFor(null, "jl77.piper-store.site").shouldBeNull()
         PlaybackReferer.refererFor("", "jl77.piper-store.site").shouldBeNull()
+    }
+
+    @Test
+    fun `embed host is recognised`() {
+        PlaybackReferer.isEmbedHost("sadie-shop.site") shouldBe true
+        PlaybackReferer.isEmbedHost("piper-store.site") shouldBe false
+        PlaybackReferer.isEmbedHost(null) shouldBe false
     }
 }

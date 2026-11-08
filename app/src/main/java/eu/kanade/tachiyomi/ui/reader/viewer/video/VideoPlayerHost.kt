@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,7 +66,10 @@ fun VideoPlayerHost(
         audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 1
     }
 
-    val player = remember(context) {
+    // Keyed on the clip and its Referer: ExoPlayer bakes default request headers into its data
+    // source when it is built, so a reused player would keep sending the previous clip's Referer.
+    // Rebuilding per clip is cheap and keeps the CDN handshake correct on chapter or mirror changes.
+    val player = key(videoUrl, refererUrl) {
         val dataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
             .setDefaultRequestProperties(
