@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.extension.zh.huangvideo.HuangVideo
 import eu.kanade.tachiyomi.extension.zh.kanav.Kanav
 import eu.kanade.tachiyomi.extension.zh.kanliao.Kanliao
 import eu.kanade.tachiyomi.extension.zh.koreanporn.KoreanPornMovie
+import eu.kanade.tachiyomi.extension.zh.pornhub.Pornhub
 import eu.kanade.tachiyomi.extension.zh.missbby.MissBby
 import eu.kanade.tachiyomi.extension.zh.mrds.Mrds
 import eu.kanade.tachiyomi.extension.zh.rou.Rou
@@ -85,6 +86,7 @@ class AndroidSourceManager(
                         Kanav(),
                         MissBby(),
                         Tt123Av(),
+                        Pornhub(),
                     ).forEach { source ->
                         try {
                             mutableMap[source.id] = source

@@ -61,7 +61,7 @@ class Cavporn : VideoSource(
             ListingItem(url = it.url, title = it.title, thumbnailUrl = it.thumbnailUrl)
         }
 
-    override fun findNextPageUrl(document: Document): String? =
+    override fun findNextPageUrl(document: Document, currentPage: Int): String? =
         CavpornParser.findNextPageUrl(document, ::absolute)
 
     // ============================== Details ==============================

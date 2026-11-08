@@ -91,9 +91,10 @@ abstract class VideoSource(
     /**
      * Finds the "next page" link in a listing document, or null on the last page.
      *
-     * Defaults to null, which ends pagination after the first page.
+     * [currentPage] is the page that was fetched, so a source that follows numbered links can
+     * skip the pages at or below it. Defaults to null, which ends pagination after the first page.
      */
-    protected open fun findNextPageUrl(document: Document): String? = null
+    protected open fun findNextPageUrl(document: Document, currentPage: Int = 1): String? = null
 
     /** Parses a details page into the entry plus its playable clip. */
     protected abstract fun parseDetails(document: Document, manga: SManga): DetailsResult
@@ -270,7 +271,7 @@ abstract class VideoSource(
             }
         }
 
-        val next = findNextPageUrl(document)
+        val next = findNextPageUrl(document, page)
         if (next != null) {
             nextPageUrls["$kind|${page + 1}"] = next
         } else {

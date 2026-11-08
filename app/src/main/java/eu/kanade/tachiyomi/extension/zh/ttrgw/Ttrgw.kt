@@ -52,7 +52,7 @@ class Ttrgw : VideoSource(
             ListingItem(it.url, it.title, it.thumbnailUrl)
         }
 
-    override fun findNextPageUrl(document: Document): String? =
+    override fun findNextPageUrl(document: Document, currentPage: Int): String? =
         TtrgwParser.findNextPageUrl(document, ::absolute)
 
     // ============================== Details ==============================

@@ -45,7 +45,7 @@ class Tt123Av : VideoSource(
             ListingItem(it.url, it.title, it.thumbnailUrl)
         }
 
-    override fun findNextPageUrl(document: Document): String? =
+    override fun findNextPageUrl(document: Document, currentPage: Int): String? =
         Tt123AvParser.findNextPageUrl(document, ::absolute)
 
     override fun parseDetails(document: Document, manga: SManga): DetailsResult {

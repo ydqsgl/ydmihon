@@ -61,7 +61,7 @@ class HuangVideo : VideoSource(
         }
     }
 
-    override fun findNextPageUrl(document: Document): String? =
+    override fun findNextPageUrl(document: Document, currentPage: Int): String? =
         HuangParser.findNextPageUrl(document, ::absolute)
 
     // ============================== Details ==============================

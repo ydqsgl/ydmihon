@@ -31,7 +31,7 @@ class MissBby : VideoSource(
             ListingItem(it.url, it.title, it.thumbnailUrl)
         }
 
-    override fun findNextPageUrl(document: Document): String? =
+    override fun findNextPageUrl(document: Document, currentPage: Int): String? =
         MissBbyParser.findNextPageUrl(document, ::absolute)
 
     override fun parseDetails(document: Document, manga: SManga): DetailsResult {
