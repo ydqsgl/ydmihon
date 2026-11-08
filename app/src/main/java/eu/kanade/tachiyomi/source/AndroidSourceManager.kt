@@ -10,12 +10,16 @@ import eu.kanade.tachiyomi.extension.zh.cavporn.Cavporn
 import eu.kanade.tachiyomi.extension.zh.chigua.Chigua
 import eu.kanade.tachiyomi.extension.zh.hsck.Hsck
 import eu.kanade.tachiyomi.extension.zh.huangvideo.HuangVideo
+import eu.kanade.tachiyomi.extension.zh.kanav.Kanav
 import eu.kanade.tachiyomi.extension.zh.kanliao.Kanliao
 import eu.kanade.tachiyomi.extension.zh.koreanporn.KoreanPornMovie
+import eu.kanade.tachiyomi.extension.zh.missbby.MissBby
 import eu.kanade.tachiyomi.extension.zh.mrds.Mrds
 import eu.kanade.tachiyomi.extension.zh.rou.Rou
 import eu.kanade.tachiyomi.extension.zh.taiav.Taiav
+import eu.kanade.tachiyomi.extension.zh.ttrgw.Ttrgw
 import eu.kanade.tachiyomi.extension.zh.tangxin.Tangxin
+import eu.kanade.tachiyomi.extension.zh.tt123av.Tt123Av
 import eu.kanade.tachiyomi.extension.zh.xxcosplay.Xxcosplay
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.CoroutineScope
@@ -77,6 +81,10 @@ class AndroidSourceManager(
                         Tangxin(),
                         Xxcosplay(),
                         KoreanPornMovie(),
+                        Ttrgw(),
+                        Kanav(),
+                        MissBby(),
+                        Tt123Av(),
                     ).forEach { source ->
                         try {
                             mutableMap[source.id] = source
