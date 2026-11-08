@@ -11,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,7 +26,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -66,22 +64,26 @@ fun VideoPlayerHost(
         audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 1
     }
 
-    // Keyed on the clip and its Referer: ExoPlayer bakes default request headers into its data
-    // source when it is built, so a reused player would keep sending the previous clip's Referer.
-    // Rebuilding per clip is cheap and keeps the CDN handshake correct on chapter or mirror changes.
-    val player = key(videoUrl, refererUrl) {
-        val dataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(USER_AGENT)
-            .setDefaultRequestProperties(
+    // The Referer is read through a holder on every connection instead of being baked into the
+    // player: rebuilding the player mid-playback tears down its surface (observed as a
+    // create/release loop), while a fixed header map would keep sending a stale Referer after the
+    // clip changes. Assigning in a SideEffect keeps this out of the composition write phase.
+    val currentReferer = remember { mutableStateOf(refererUrl) }
+    androidx.compose.runtime.SideEffect { currentReferer.value = refererUrl }
+
+    val player = remember(context) {
+        val dataSourceFactory = DynamicHeaderDataSourceFactory(
+            headersProvider = {
                 buildMap {
                     put("User-Agent", USER_AGENT)
                     put("Accept", "*/*")
-                    refererUrl?.toHttpUrlOrNull()?.let { put("Referer", "${it.scheme}://${it.host}/") }
-                },
-            )
-            .setConnectTimeoutMs(20_000)
-            .setReadTimeoutMs(20_000)
-            .setAllowCrossProtocolRedirects(true)
+                    currentReferer.value
+                        ?.toHttpUrlOrNull()
+                        ?.let { put("Referer", "${it.scheme}://${it.host}/") }
+                }
+            },
+            userAgent = USER_AGENT,
+        )
 
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(
@@ -136,7 +138,7 @@ fun VideoPlayerHost(
     }
 
     // Load (and reload on retry) the media item.
-    LaunchedEffect(videoUrl, retryKey) {
+    LaunchedEffect(player, videoUrl, retryKey) {
         if (videoUrl.isNullOrBlank()) return@LaunchedEffect
         controls = controls.copy(isBuffering = true, positionMs = 0L, durationMs = 0L)
         runCatching {

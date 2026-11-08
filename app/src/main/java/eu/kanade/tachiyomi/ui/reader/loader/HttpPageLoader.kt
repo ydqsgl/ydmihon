@@ -42,13 +42,8 @@ internal class HttpPageLoader(
      * otherwise fallbacks to network.
      */
     override suspend fun getPages(): List<ReaderPage> {
-        // A cached video page list holds a *signed* clip URL that expires, so replaying it fails
-        // with 403 until the video is resolved again. Only image sources may trust the cache.
-        val cached = chapterCache.getPageList(chapter.chapter)
-            ?.takeUnless { pages ->
-                pages.any { it.videoUrl != null || (it.imageUrl?.let(::isVideoUrl) == true) }
-            }
-        val pages = cached ?: source.getPageList(chapter.chapter.toSChapter())
+        val pages = chapterCache.getPageList(chapter.chapter)
+            ?: source.getPageList(chapter.chapter.toSChapter())
         return pages.mapIndexed { index, page ->
             // Don't trust sources and use our own indexing
             ReaderPage(index, page.url, page.imageUrl).also {
