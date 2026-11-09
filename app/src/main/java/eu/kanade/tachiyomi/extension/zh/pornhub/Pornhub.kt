@@ -21,10 +21,12 @@ import org.jsoup.nodes.Document
  *
  * The user browses the official `www.pornhub.com`; the `cn.` subdomain resolves to unrelated
  * IPs (a Dropbox range on public resolvers) and is not a dependable Pornhub host, so the source
- * pins `www`. Listing is the browse feed `/video?o=cm&t=m` with `?page=N` pagination; search
- * goes through `/video/search?search=<q>`. There is no category filter here: Pornhub's taxonomy
- * is deep and its browse pages are driven by the same feed, so the source keeps the popular feed
- * and search.
+ * pins `www`. The browse feed is `/recommended`, which is the page Pornhub personalises for a
+ * signed-in account — `/video?o=cm` is a global "most viewed" list that ignores the session, so a
+ * user who logs in through the WebView would see no difference there. Pagination is `?page=N`;
+ * search goes through `/video/search?search=<q>`. There is no category filter here: Pornhub's
+ * taxonomy is deep and its browse pages are driven by the same feed, so the source keeps the
+ * recommendation feed and search.
  */
 class Pornhub : VideoSource(
     knownDomains = listOf("https://www.pornhub.com"),
@@ -34,12 +36,19 @@ class Pornhub : VideoSource(
     override val lang = "zh"
     override val supportsLatest = true
 
-    override fun isListingHtml(html: String): Boolean =
-        html.contains("view_video.php") && html.contains("videoBox")
+    public override fun isListingHtml(html: String): Boolean =
+        html.contains("view_video.php") &&
+            (html.contains("videoWrapper") || html.contains("videoThumb") || html.contains("videoBox"))
 
-    /** `/video` is the browse feed; pagination is the `?page=N` scheme. */
+    /**
+     * Probe the recommendation feed itself: Pornhub's homepage is a JS shell with no cards, and
+     * `/recommended` is the page the listing actually loads.
+     */
+    override val probePath: String get() = "/recommended"
+
+    /** `/recommended` is the personalised browse feed; pagination is the `?page=N` scheme. */
     override fun listingUrl(page: Int): String =
-        if (page <= 1) "$baseUrl/video?o=cm&t=m" else "$baseUrl/video?o=cm&t=m&page=$page"
+        if (page <= 1) "$baseUrl/recommended" else "$baseUrl/recommended?page=$page"
 
     // ============================== Listing ==============================
 

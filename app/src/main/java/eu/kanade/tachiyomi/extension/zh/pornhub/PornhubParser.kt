@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 
 /**
  * Parsing for Pornhub, kept free of networking so it can be tested against saved pages.
@@ -52,32 +53,56 @@ internal object PornhubParser {
     /**
      * Parses listing cards.
      *
-     * Pornhub wraps each card in `li.videoBox` with an inner `.phimage` block; some pages use a
-     * flat `.wrap` instead. We select the anchor by its `view_video.php` href, which is the only
-     * stable marker across layouts.
+     * Pornhub's browse page marks every card with `data-video-vkey` on the outer `li`, and its own
+     * script config (`videoBoxSelector: '.videoWrapper'`) names the inner block, so those two are
+     * the dependable containers. The card holds **two** `view_video.php` anchors — the thumbnail
+     * link (`a.imageLink`, no text) and the title link inside `div.title` — which is why reading
+     * the title off the first anchor found is wrong: it is empty and the card gets dropped.
+     *
+     * The title is therefore looked up on the card, in order of reliability: the `div.title`
+     * link's text, the anchor's `title` attribute (older layouts), and finally the thumbnail's
+     * `alt`, which Pornhub always fills with the video title.
      */
-    fun parseListing(document: Document, absoluteUrl: (String) -> String): List<ListingItem> =
-        document.select("a[href*=\"view_video.php\"]").mapNotNull { link ->
-            val href = link.attr("href").trim()
-            if (href.isEmpty()) return@mapNotNull null
+    fun parseListing(document: Document, absoluteUrl: (String) -> String): List<ListingItem> {
+        val containers = document.select("li[data-video-vkey]")
+            .ifEmpty { document.select("div.videoWrapper") }
+            .ifEmpty { document.select("a[href*=\"view_video.php\"]") }
 
-            // Prefer the anchor's own title attribute; the <h3>/<span> title may be empty until
-            // the client-side hydration runs.
-            val title = link.attr("title").trim()
-                .ifEmpty { link.selectFirst("h3, .title, span[data-title]")?.text()?.trim().orEmpty() }
-            if (title.isEmpty()) return@mapNotNull null
-
-            val thumbnail = link.selectFirst("img[src]")?.attr("src")?.trim()
-                ?.takeIf { it.isNotBlank() }
-
-            ListingItem(
-                url = absoluteUrl(href),
-                title = title,
-                thumbnailUrl = thumbnail,
-            )
-        }
+        return containers
+            .mapNotNull { parseCard(it, absoluteUrl) }
             // Pornhub repeats cards (one per quality/preview row); keep the first of each URL.
             .distinctBy { it.url }
+    }
+
+    /** Reads one card, or null when it carries no link or no usable title. */
+    private fun parseCard(card: Element, absoluteUrl: (String) -> String): ListingItem? {
+        val anchor = if (card.tagName() == "a") {
+            card.takeIf { it.attr("href").contains("view_video.php") }
+        } else {
+            card.selectFirst("a[href*=\"view_video.php\"]")
+        } ?: return null
+
+        val href = anchor.attr("href").trim()
+        if (href.isEmpty()) return null
+
+        val title = sequenceOf(
+            card.selectFirst("div.title a[href*=\"view_video.php\"], .title a, .title")?.text(),
+            anchor.attr("title"),
+            card.selectFirst("img[alt]")?.attr("alt"),
+            anchor.text(),
+        ).map { it?.trim().orEmpty() }
+            .firstOrNull { it.isNotEmpty() }
+            ?: return null
+
+        val thumbnail = (card.selectFirst("img.videoThumb[src]") ?: card.selectFirst("img[src]"))
+            ?.attr("src")?.trim()?.takeIf { it.isNotBlank() }
+
+        return ListingItem(
+            url = absoluteUrl(href),
+            title = title,
+            thumbnailUrl = thumbnail,
+        )
+    }
 
     /**
      * Finds the "next page" link in a listing document.
@@ -133,7 +158,8 @@ internal object PornhubParser {
             ?.takeIf { it.isNotBlank() }
 
         val dateUpload = flashvars?.string("uploadDate")
-            ?.let(::parseUploadDate) ?: 0L
+            ?.let(::parseUploadDate)?.takeIf { it > 0L }
+            ?: jsonLdUploadDate(document)
 
         val m3u8Url = flashvars?.let(::bestHlsUrl)
 
@@ -234,6 +260,25 @@ internal object PornhubParser {
     private fun parseUploadDate(raw: String): Long = runCatching {
         java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli()
     }.getOrDefault(0L)
+
+    /**
+     * Reads `uploadDate` out of the page's JSON-LD block.
+     *
+     * `flashvars` no longer carries a date, but the schema.org block next to it does, and that is
+     * the only place the publish time still appears in the server-rendered HTML.
+     */
+    private fun jsonLdUploadDate(document: Document): Long {
+        for (script in document.select("script[type=\"application/ld+json\"]")) {
+            val element = runCatching { json.parseToJsonElement(script.data()) }.getOrNull() ?: continue
+            val objects = if (element is JsonArray) element.toList() else listOf(element)
+            for (candidate in objects) {
+                val raw = (candidate as? JsonObject)?.string("uploadDate") ?: continue
+                val parsed = parseUploadDate(raw)
+                if (parsed > 0L) return parsed
+            }
+        }
+        return 0L
+    }
 
     // ============================== Json helpers ==============================
 

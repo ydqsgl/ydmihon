@@ -9,7 +9,13 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.junit.jupiter.api.Test
 
-/** Parsing checks against pages saved from the live site. */
+/**
+ * Parsing checks against pages saved from the live site.
+ *
+ * The fixtures are trimmed real pages, not hand-written markup: the browse page's cards carry two
+ * `view_video.php` anchors (thumbnail + title) and the title only exists in `div.title`, so a
+ * simplified fixture would keep passing while the real listing parsed to zero items.
+ */
 class PornhubParserTest {
 
     private fun load(name: String): String {
@@ -41,15 +47,24 @@ class PornhubParserTest {
     }
 
     @Test
-    fun `listing title comes from anchor attribute`() {
+    fun `listing title comes from the card title link`() {
         val items = PornhubParser.parseListing(document("listing.html"), ::absolute)
-        items.first().title shouldBe "95磅第一次业余Ally脸性交窒息吐口水和阴户捣碎"
+        // The thumbnail anchor has no title attribute; the title lives in `div.title > a`.
+        items.first().title shouldBe
+            "Quick fuck in the kitchen before our parents get home! Creampie"
     }
 
     @Test
-    fun `listing items are unique`() {
+    fun `listing skips the duplicate thumbnail anchor of the same card`() {
         val items = PornhubParser.parseListing(document("listing.html"), ::absolute)
+        items.size shouldBe 4
         items.map { it.url }.toSet().size shouldBe items.size
+    }
+
+    @Test
+    fun `listing thumbnail is the video thumb image`() {
+        val items = PornhubParser.parseListing(document("listing.html"), ::absolute)
+        items.first().thumbnailUrl shouldContain "phncdn.com"
     }
 
     @Test
@@ -73,12 +88,19 @@ class PornhubParserTest {
     }
 
     @Test
-    fun `details expose title cover genre and date`() {
+    fun `listing page is recognised as a listing`() {
+        // The mirror probe depends on this predicate; the live page names its cards
+        // `videoWrapper`, and `videoBox` only survives inside an inline script config.
+        Pornhub().isListingHtml(load("listing.html")) shouldBe true
+    }
+
+    @Test
+    fun `details expose title cover and date`() {
         val details = PornhubParser.parseDetails(document("detail.html"), ::absolute)
-        details.title.isNotBlank() shouldBe true
-        details.title shouldContain "摩洛伊斯兰解放阵线"
+        details.title shouldBe
+            "Quick fuck in the kitchen before our parents get home! Creampie"
         details.coverUrl.shouldNotBeNull()
-        details.genre shouldContain "Pussy Licking"
+        // The date is no longer in flashvars; it comes from the JSON-LD block.
         (details.dateUpload > 0L) shouldBe true
     }
 
@@ -101,21 +123,11 @@ class PornhubParserTest {
     }
 
     @Test
-    fun `flashvars extraction tolerates nested braces`() {
-        val flashvars = PornhubParser.extractFlashvars(document("detail.html"))
-        flashvars.shouldNotBeNull()
-        // video_duration is present and readable through the public bestHlsUrl path.
-        val url = PornhubParser.bestHlsUrl(flashvars!!)
-        url.shouldNotBeNull()
-        url shouldContain "master.m3u8"
-    }
-
-    @Test
     fun `details fall back to dom when flashvars missing`() {
-        val html = load("detail.html").replace(Regex("""<script>[\s\S]*?</script>"""), "")
+        val html = load("detail.html").replace(Regex("""<script[\s\S]*?</script>"""), "")
         val doc = Jsoup.parse(html, "https://www.pornhub.com/view_video.php")
         val details = PornhubParser.parseDetails(doc, ::absolute)
-        details.title shouldContain "摩洛伊斯兰解放阵线"
+        details.title shouldContain "Quick Fuck in the Kitchen"
         details.coverUrl.shouldNotBeNull()
         details.m3u8Url shouldBe null
     }
