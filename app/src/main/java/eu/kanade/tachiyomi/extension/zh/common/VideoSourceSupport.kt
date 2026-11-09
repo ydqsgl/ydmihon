@@ -107,6 +107,42 @@ internal object VideoSourceSupport {
         """document\.write\s*\(\s*Base64\.decode\s*\(\s*['"]([A-Za-z0-9+/=\s]+)['"]\s*\)\s*\)""",
     )
 
+    /**
+     * Decodes an entity that the site encoded twice.
+     *
+     * 91porn prints titles as `&amp;#039;`, which jsoup decodes once to the literal `&#039;`.
+     * Showing that to the user is worse than one more pass, so numeric and the handful of named
+     * entities these sites use are decoded here.
+     */
+    fun decodeEntities(text: String): String {
+        if (!text.contains('&')) return text
+        var result = text
+        // Numeric entities: &#39; / &#x27;
+        result = NUMERIC_ENTITY.replace(result) { match ->
+            val value = match.groupValues[1]
+            val code = if (value.startsWith("x", ignoreCase = true)) {
+                value.drop(1).toIntOrNull(16)
+            } else {
+                value.toIntOrNull()
+            }
+            code?.takeIf { it in 0x20..0x10FFFF }?.let { String(Character.toChars(it)) } ?: match.value
+        }
+        // The few named entities that survive jsoup on these pages.
+        NAMED_ENTITIES.forEach { (entity, char) -> result = result.replace(entity, char) }
+        return result
+    }
+
+    private val NUMERIC_ENTITY = Regex("""&#(x?[0-9A-Fa-f]+);""")
+
+    private val NAMED_ENTITIES = listOf(
+        "&quot;" to "\"",
+        "&apos;" to "'",
+        "&nbsp;" to " ",
+        "&lt;" to "<",
+        "&gt;" to ">",
+        "&amp;" to "&",
+    )
+
     /** Strips the scheme and host so the URL can be stored relative to the source's base URL. */
     fun withoutDomain(url: String): String {
         val parsed = runCatching { Uri.parse(url) }.getOrNull() ?: return url

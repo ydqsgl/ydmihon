@@ -16,6 +16,11 @@ import eu.kanade.tachiyomi.extension.zh.koreanporn.KoreanPornMovie
 import eu.kanade.tachiyomi.extension.zh.pornhub.Pornhub
 import eu.kanade.tachiyomi.extension.zh.missbby.MissBby
 import eu.kanade.tachiyomi.extension.zh.mrds.Mrds
+import eu.kanade.tachiyomi.extension.zh.pinse91.Pinse91
+import eu.kanade.tachiyomi.extension.zh.porn91.Porn91
+import eu.kanade.tachiyomi.extension.zh.porna91.Porna91
+import eu.kanade.tachiyomi.extension.zh.sexkbj.Sexkbj
+import eu.kanade.tachiyomi.extension.zh.siwa.Siwa
 import eu.kanade.tachiyomi.extension.zh.rou.Rou
 import eu.kanade.tachiyomi.extension.zh.taiav.Taiav
 import eu.kanade.tachiyomi.extension.zh.ttrgw.Ttrgw
@@ -87,6 +92,11 @@ class AndroidSourceManager(
                         MissBby(),
                         Tt123Av(),
                         Pornhub(),
+                        Porn91(),
+                        Porna91(),
+                        Pinse91(),
+                        Siwa(),
+                        Sexkbj(),
                     ).forEach { source ->
                         try {
                             mutableMap[source.id] = source
