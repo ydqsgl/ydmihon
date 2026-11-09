@@ -101,7 +101,33 @@ fun WebView.setDefaultSettings() {
         displayZoomControls = false
     }
 
-    CookieManager.getInstance().acceptThirdPartyCookies(this)
+    // Cookies are shared with the app's OkHttp client through AndroidCookieJar, so a login made
+    // here also authenticates the source's requests. Third-party cookies have to be switched on
+    // explicitly: the default is off, and `acceptThirdPartyCookies(view)` only *reads* the flag.
+    CookieManager.getInstance().apply {
+        setAcceptCookie(true)
+        setAcceptThirdPartyCookies(this@setDefaultSettings, true)
+    }
+}
+
+/**
+ * Writes the WebView cookie store to disk.
+ *
+ * Cookies live in memory until they are flushed, so a login made in the WebView is lost if the
+ * process dies before Chromium gets around to persisting them. Calling this whenever the WebView
+ * goes away makes the session survive an app restart.
+ *
+ * `flush()` blocks until Chromium has written the store, so it runs on a background thread; call
+ * sites can stay on the main thread.
+ */
+fun flushWebViewCookies() {
+    Thread {
+        runCatching { CookieManager.getInstance().flush() }
+    }.apply {
+        name = "webview-cookie-flush"
+        isDaemon = true
+        start()
+    }
 }
 
 /**

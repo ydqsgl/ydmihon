@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.ui.reader.viewer.video
 import android.content.Context
 import android.media.AudioManager
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -71,6 +72,12 @@ fun VideoPlayerHost(
     val currentReferer = remember { mutableStateOf(refererUrl) }
     androidx.compose.runtime.SideEffect { currentReferer.value = refererUrl }
 
+    // Cookies are read per request from the WebView store (the same store AndroidCookieJar feeds
+    // OkHttp with), so a login made in the built-in browser also authorises the player's playlist
+    // and segment requests. Nothing is sent to a host the cookie does not belong to.
+    val currentClipUrl = remember { mutableStateOf(videoUrl) }
+    androidx.compose.runtime.SideEffect { currentClipUrl.value = videoUrl }
+
     val player = remember(context) {
         val dataSourceFactory = DynamicHeaderDataSourceFactory(
             headersProvider = {
@@ -80,6 +87,10 @@ fun VideoPlayerHost(
                     currentReferer.value
                         ?.toHttpUrlOrNull()
                         ?.let { put("Referer", "${it.scheme}://${it.host}/") }
+                    currentClipUrl.value
+                        ?.let { runCatching { CookieManager.getInstance().getCookie(it) }.getOrNull() }
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { put("Cookie", it) }
                 }
             },
             userAgent = USER_AGENT,

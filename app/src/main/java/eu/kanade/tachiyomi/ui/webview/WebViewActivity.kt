@@ -16,6 +16,7 @@ import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
 import eu.kanade.tachiyomi.util.system.WebViewUtil
+import eu.kanade.tachiyomi.util.system.flushWebViewCookies
 import eu.kanade.tachiyomi.util.system.openInBrowser
 import eu.kanade.tachiyomi.util.system.toShareIntent
 import eu.kanade.tachiyomi.util.system.toWebViewHeaders
@@ -97,6 +98,14 @@ class WebViewActivity : BaseActivity() {
                 onClearCookies = this::clearCookies,
             )
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // The user may have logged in while this screen was open; make sure the cookie store is on
+        // disk so the session is still there after the app is killed. OkHttp reads the same store
+        // (see AndroidCookieJar), so the source's requests pick the login up immediately.
+        flushWebViewCookies()
     }
 
     override fun onProvideAssistContent(outContent: AssistContent) {

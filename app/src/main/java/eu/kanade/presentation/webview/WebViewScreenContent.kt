@@ -45,6 +45,7 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.WarningBanner
 import eu.kanade.tachiyomi.BuildConfig
+import eu.kanade.tachiyomi.util.system.flushWebViewCookies
 import eu.kanade.tachiyomi.util.system.getHtml
 import eu.kanade.tachiyomi.util.system.setDefaultSettings
 import eu.kanade.tachiyomi.util.system.setUserAgent
@@ -365,6 +366,10 @@ fun WebViewScreenContent(
                     webView.setUserAgent(headers["user-agent"] ?: defaultUserAgentProvider())
                 },
                 onDispose = { webView ->
+                    // Persist any cookie the page just set (e.g. a login) before the WebView goes
+                    // away: the store is memory-backed until it is flushed.
+                    flushWebViewCookies()
+
                     val window = windowStack.items.find { it.webView == webView }
                     if (window == null) {
                         // If we couldn't find any window on the stack that owns this WebView, it means that we can
